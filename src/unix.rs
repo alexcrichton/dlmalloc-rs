@@ -45,3 +45,11 @@ pub fn release_global_lock() {
         assert_eq!(libc::pthread_mutex_unlock(&mut LOCK), 0)
     }
 }
+
+pub fn allocates_zeros() -> bool {
+    true
+}
+
+pub fn page_size() -> usize {
+    4096
+}

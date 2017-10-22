@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::heap::{Alloc, Layout, AllocErr};
+use core::ptr;
 
 pub use self::global::GlobalDlmalloc;
 
@@ -15,19 +16,6 @@ pub struct Dlmalloc(dlmalloc::Dlmalloc);
 #[path = "unix.rs"]
 mod sys;
 mod global;
-
-#[repr(C)]
-struct Header(*mut u8);
-
-unsafe fn get_header<'a>(ptr: *mut u8) -> &'a mut Header {
-    &mut *(ptr as *mut Header).offset(-1)
-}
-
-unsafe fn align_ptr(ptr: *mut u8, align: usize) -> *mut u8 {
-    let aligned = ptr.offset((align - (ptr as usize & (align - 1))) as isize);
-    *get_header(aligned) = Header(ptr);
-    aligned
-}
 
 impl Dlmalloc {
     pub fn new() -> Dlmalloc {
@@ -41,13 +29,7 @@ unsafe impl Alloc for Dlmalloc {
         let ptr = if layout.align() <= self.0.malloc_alignment() {
             self.0.malloc(layout.size())
         } else {
-            let size = layout.size() + layout.align();
-            let ptr = self.0.malloc(size);
-            if ptr.is_null() {
-                ptr
-            } else {
-                align_ptr(ptr, layout.align())
-            }
+            self.0.memalign(layout.align(), layout.size())
         };
         if ptr.is_null() {
             Err(AllocErr::Exhausted { request: layout })
@@ -56,21 +38,22 @@ unsafe impl Alloc for Dlmalloc {
         }
     }
 
-    // #[inline]
-    // unsafe fn alloc_zeroed(&mut self, layout: Layout)
-    //     -> Result<*mut u8, AllocErr>
-    // {
-    //     (&*self).alloc_zeroed(layout)
-    // }
-    //
+    #[inline]
+    unsafe fn alloc_zeroed(&mut self, layout: Layout)
+        -> Result<*mut u8, AllocErr>
+    {
+        let size = layout.size();
+        let ptr = self.alloc(layout)?;
+        if self.0.calloc_must_clear(ptr) {
+            ptr::write_bytes(ptr, 0, size);
+        }
+        Ok(ptr)
+    }
+
     #[inline]
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        if layout.align() <= self.0.malloc_alignment() {
-            self.0.free(ptr)
-        } else {
-            let header = get_header(ptr);
-            self.0.free(header.0)
-        }
+        drop(layout);
+        self.0.free(ptr)
     }
 
     // #[inline]

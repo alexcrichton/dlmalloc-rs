@@ -49,7 +49,12 @@ fn stress() {
                 // rng.gen_range(1, 128)
                 rng.gen_range(1, 128 * 1024)
             };
-            let layout = Layout::from_size_align(size, 8).unwrap();
+            let align = if rng.gen_weighted_bool(10) {
+                1 << rng.gen_range(3, 8)
+            } else {
+                8
+            };
+            let layout = Layout::from_size_align(size, align).unwrap();
 
             println!("malloc({})", layout.size());
             let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
