@@ -1,3 +1,5 @@
+use core::ptr;
+
 extern {
     #[link_name = "llvm.wasm.current.memory.i32"]
     fn current_memory() -> u32;
@@ -14,6 +16,13 @@ pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     let cur = current_memory() as usize;
     grow_memory(pages as u32);
     ((cur * page_size()) as *mut u8, pages * page_size(), 0)
+}
+
+pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool)
+    -> *mut u8
+{
+    // TODO: I think this can be implemented near the end?
+    ptr::null_mut()
 }
 
 pub unsafe fn free_part(_ptr: *mut u8, _oldsize: usize, _newsize: usize) -> bool {

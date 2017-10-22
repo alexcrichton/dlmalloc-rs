@@ -3,6 +3,7 @@
 extern crate dlmalloc;
 extern crate rand;
 
+use std::cmp;
 use std::heap::{Layout, Alloc, System};
 
 use dlmalloc::Dlmalloc;
@@ -42,6 +43,31 @@ fn stress() {
                 continue
             }
 
+            if ptrs.len() > 0 && rng.gen_weighted_bool(100) {
+                let idx = rng.gen_range(0, ptrs.len());
+                let (ptr, old): (_, Layout) = ptrs.swap_remove(idx);
+                let new = if rng.gen() {
+                    Layout::from_size_align(rng.gen_range(old.size(), old.size() * 2),
+                                            old.align()).unwrap()
+                } else if old.size() > 10 {
+                    Layout::from_size_align(rng.gen_range(old.size() / 2, old.size()),
+                                            old.align()).unwrap()
+                } else {
+                    continue
+                };
+                let mut tmp = Vec::new();
+                for i in 0..cmp::min(old.size(), new.size()) {
+                    tmp.push(*ptr.offset(i as isize));
+                }
+                let ptr = a.realloc(ptr, old, new.clone()).unwrap_or_else(|e| {
+                    System.oom(e)
+                });
+                for (i, byte) in tmp.iter().enumerate() {
+                    assert_eq!(*byte, *ptr.offset(i as isize));
+                }
+                ptrs.push((ptr, new));
+            }
+
             let size = if rng.gen() {
                 rng.gen_range(1, 128)
             } else {
@@ -52,6 +78,7 @@ fn stress() {
             } else {
                 8
             };
+
             let zero = rng.gen_weighted_bool(50);
             let layout = Layout::from_size_align(size, align).unwrap();
 

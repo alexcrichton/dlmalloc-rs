@@ -5,6 +5,7 @@
 extern crate alloc;
 
 use alloc::heap::{Alloc, Layout, AllocErr};
+use core::cmp;
 use core::ptr;
 
 pub use self::global::GlobalDlmalloc;
@@ -61,13 +62,34 @@ unsafe impl Alloc for Dlmalloc {
         self.0.free(ptr)
     }
 
-    // #[inline]
-    // unsafe fn realloc(&mut self,
-    //                   ptr: *mut u8,
-    //                   old_layout: Layout,
-    //                   new_layout: Layout) -> Result<*mut u8, AllocErr> {
-    //     (&*self).realloc(ptr, old_layout, new_layout)
-    // }
+    #[inline]
+    unsafe fn realloc(&mut self,
+                      ptr: *mut u8,
+                      old_layout: Layout,
+                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
+        if old_layout.align() != new_layout.align() {
+            return Err(AllocErr::Unsupported {
+                details: "cannot change alignment on `realloc`",
+            })
+        }
+
+        if new_layout.align() <= self.0.malloc_alignment() {
+            let ptr = self.0.realloc(ptr, new_layout.size());
+            if !ptr.is_null() {
+                Ok(ptr as *mut u8)
+            } else {
+                Err(AllocErr::Exhausted { request: new_layout })
+            }
+        } else {
+            let res = self.alloc(new_layout.clone());
+            if let Ok(new_ptr) = res {
+                let size = cmp::min(old_layout.size(), new_layout.size());
+                ptr::copy_nonoverlapping(ptr, new_ptr, size);
+                self.dealloc(ptr, old_layout);
+            }
+            res
+        }
+    }
 
     // fn oom(&mut self, err: AllocErr) -> ! {
     //     System.oom(err)

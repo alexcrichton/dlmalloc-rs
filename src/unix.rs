@@ -16,6 +16,18 @@ pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     }
 }
 
+pub unsafe fn remap(ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool)
+    -> *mut u8
+{
+    let flags = if can_move { libc::MREMAP_MAYMOVE } else { 0 };
+    let ptr = libc::mremap(ptr as *mut _, oldsize, newsize, flags);
+    if ptr == libc::MAP_FAILED {
+        ptr::null_mut()
+    } else {
+        ptr as *mut u8
+    }
+}
+
 pub unsafe fn free_part(ptr: *mut u8, oldsize: usize, newsize: usize) -> bool {
     let rc = libc::mremap(ptr as *mut _, oldsize, newsize, 0);
     if rc != libc::MAP_FAILED {
