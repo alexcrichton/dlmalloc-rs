@@ -1,4 +1,5 @@
 #![feature(allocator_api, alloc)]
+#![cfg_attr(target_arch = "wasm32", feature(link_llvm_intrinsics))]
 #![no_std]
 
 extern crate alloc;
@@ -8,14 +9,18 @@ use core::ptr;
 
 pub use self::global::GlobalDlmalloc;
 
+mod global;
 mod dlmalloc;
 
 pub struct Dlmalloc(dlmalloc::Dlmalloc);
 
-#[cfg(unix)]
+#[cfg(target_arch = "wasm32")]
+#[path = "wasm.rs"]
+mod sys;
+
+#[cfg(all(unix, not(target_arch = "wasm32")))]
 #[path = "unix.rs"]
 mod sys;
-mod global;
 
 impl Dlmalloc {
     pub fn new() -> Dlmalloc {

@@ -38,7 +38,6 @@ fn stress() {
             if free {
                 let idx = rng.gen_range(0, ptrs.len());
                 let (ptr, layout): (_, Layout) = ptrs.swap_remove(idx);
-                println!("free({})", layout.size());
                 a.dealloc(ptr, layout);
                 continue
             }
@@ -46,7 +45,6 @@ fn stress() {
             let size = if rng.gen() {
                 rng.gen_range(1, 128)
             } else {
-                // rng.gen_range(1, 128)
                 rng.gen_range(1, 128 * 1024)
             };
             let align = if rng.gen_weighted_bool(10) {
@@ -54,11 +52,18 @@ fn stress() {
             } else {
                 8
             };
+            let zero = rng.gen_weighted_bool(50);
             let layout = Layout::from_size_align(size, align).unwrap();
 
-            println!("malloc({})", layout.size());
-            let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
+            let ptr = if zero {
+                a.alloc_zeroed(layout.clone()).unwrap_or_else(|e| System.oom(e))
+            } else {
+                a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e))
+            };
             for i in 0..layout.size() {
+                if zero {
+                    assert_eq!(*ptr.offset(i as isize), 0);
+                }
                 *ptr.offset(i as isize) = 0xce;
             }
             ptrs.push((ptr, layout));
