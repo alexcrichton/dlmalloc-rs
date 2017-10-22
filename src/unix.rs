@@ -31,3 +31,17 @@ pub unsafe fn free(ptr: *mut u8, size: usize) -> bool {
 pub fn can_release_part(_flags: u32) -> bool {
     true
 }
+
+static mut LOCK: libc::pthread_mutex_t = libc::PTHREAD_MUTEX_INITIALIZER;
+
+pub fn acquire_global_lock() {
+    unsafe {
+        assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0)
+    }
+}
+
+pub fn release_global_lock() {
+    unsafe {
+        assert_eq!(libc::pthread_mutex_unlock(&mut LOCK), 0)
+    }
+}
