@@ -19,8 +19,12 @@ pub struct Dlmalloc(dlmalloc::Dlmalloc);
 #[path = "wasm.rs"]
 mod sys;
 
-#[cfg(all(unix, not(target_arch = "wasm32")))]
-#[path = "unix.rs"]
+#[cfg(target_os = "macos")]
+#[path = "macos.rs"]
+mod sys;
+
+#[cfg(target_os = "linux")]
+#[path = "linux.rs"]
 mod sys;
 
 impl Dlmalloc {
