@@ -921,11 +921,14 @@ impl Dlmalloc {
     }
 
     unsafe fn smallbin_at(&mut self, idx: u32) -> *mut Chunk {
-        &mut self.smallbins[(idx as usize) * 2] as *mut *mut Chunk as *mut Chunk
+        debug_assert!(((idx * 2) as usize) < self.smallbins.len());
+        &mut *self.smallbins.get_unchecked_mut((idx as usize) * 2)
+            as *mut *mut Chunk as *mut Chunk
     }
 
     unsafe fn treebin_at(&mut self, idx: u32) -> *mut *mut TreeChunk {
-        &mut self.treebins[idx as usize]
+        debug_assert!((idx as usize) < self.treebins.len());
+        &mut *self.treebins.get_unchecked_mut(idx as usize)
     }
 
     fn compute_tree_index(&self, size: usize) -> u32 {
