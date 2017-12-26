@@ -1512,7 +1512,7 @@ impl Dlmalloc {
                 tsize < self.min_size_for_tree_index(idx + 1));
 
         let mut u = t;
-        let mut head = ptr::null_mut();
+        let mut head = ptr::null_mut::<TreeChunk>();
         loop {
             let uc = TreeChunk::chunk(u);
             self.check_any_chunk(uc);
