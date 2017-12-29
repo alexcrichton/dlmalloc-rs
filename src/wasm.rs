@@ -15,8 +15,8 @@ pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     let pages = size / page_size();
     let cur = current_memory() as usize;
     grow_memory(pages as u32);
-    if current_memory() == cur {
-        (ptr::null_mut(), 0, 0)
+    if current_memory() as usize == cur {
+        return (ptr::null_mut(), 0, 0);
     }
     ((cur * page_size()) as *mut u8, pages * page_size(), 0)
 }
