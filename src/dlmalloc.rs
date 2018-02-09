@@ -902,7 +902,7 @@ impl Dlmalloc {
         }
 
         // If dv is a better fit, then return null so malloc will use it
-        if v.is_null() || rsize + size >= self.dvsize {
+        if v.is_null() || (self.dvsize >= size && !(rsize < self.dvsize - size)) {
             return ptr::null_mut()
         }
 
