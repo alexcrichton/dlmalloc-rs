@@ -42,7 +42,7 @@ unsafe impl Alloc for Dlmalloc {
             self.0.memalign(layout.align(), layout.size())
         };
         if ptr.is_null() {
-            Err(AllocErr::Exhausted { request: layout })
+            Err(AllocErr)
         } else {
             Ok(ptr)
         }
@@ -72,9 +72,7 @@ unsafe impl Alloc for Dlmalloc {
                       old_layout: Layout,
                       new_layout: Layout) -> Result<*mut u8, AllocErr> {
         if old_layout.align() != new_layout.align() {
-            return Err(AllocErr::Unsupported {
-                details: "cannot change alignment on `realloc`",
-            })
+            return Err(AllocErr)
         }
 
         if new_layout.align() <= self.0.malloc_alignment() {
@@ -82,7 +80,7 @@ unsafe impl Alloc for Dlmalloc {
             if !ptr.is_null() {
                 Ok(ptr as *mut u8)
             } else {
-                Err(AllocErr::Exhausted { request: new_layout })
+                Err(AllocErr)
             }
         } else {
             let res = self.alloc(new_layout.clone());
