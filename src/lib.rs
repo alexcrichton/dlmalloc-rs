@@ -4,7 +4,7 @@
 
 use core::alloc::{Alloc, Layout, AllocErr};
 use core::cmp;
-use core::ptr;
+use core::ptr::{self, NonNull};
 
 pub use self::global::GlobalDlmalloc;
 
@@ -79,37 +79,32 @@ impl Dlmalloc {
     }
 }
 
-fn to_result(ptr: *mut u8) -> Result<*mut u8, AllocErr> {
-    if !ptr.is_null() {
-        Ok(ptr)
-    } else {
-        Err(AllocErr)
-    }
+fn to_result(ptr: *mut u8) -> Result<NonNull<u8>, AllocErr> {
+    NonNull::new(ptr).ok_or(AllocErr)
 }
 
 unsafe impl Alloc for Dlmalloc {
     #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
         to_result(self.ptr_alloc(layout))
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout)
-        -> Result<*mut u8, AllocErr>
+    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr>
     {
         to_result(self.ptr_alloc_zeroed(layout))
     }
 
     #[inline]
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        self.ptr_dealloc(ptr, layout)
+    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
+        self.ptr_dealloc(ptr.as_ptr(), layout)
     }
 
     #[inline]
     unsafe fn realloc(&mut self,
-                      ptr: *mut u8,
+                      ptr: NonNull<u8>,
                       layout: Layout,
-                      new_size: usize) -> Result<*mut u8, AllocErr> {
-        to_result(self.ptr_realloc(ptr, layout, new_size))
+                      new_size: usize) -> Result<NonNull<u8>, AllocErr> {
+        to_result(self.ptr_realloc(ptr.as_ptr(), layout, new_size))
     }
 }

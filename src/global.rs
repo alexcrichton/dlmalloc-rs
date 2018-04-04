@@ -1,5 +1,6 @@
 use core::alloc::{GlobalAlloc, Layout, Void};
 use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 
 use Dlmalloc;
 
