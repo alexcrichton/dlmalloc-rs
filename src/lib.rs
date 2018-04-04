@@ -1,10 +1,10 @@
-#![feature(allocator_api)]
+#![feature(allocator_api, nonnull_cast)]
 #![cfg_attr(target_arch = "wasm32", feature(link_llvm_intrinsics))]
 #![no_std]
 
-use core::alloc::{Alloc, Layout, AllocErr};
+use core::alloc::{Alloc, Layout, AllocErr, Void};
 use core::cmp;
-use core::ptr;
+use core::ptr::{self, NonNull};
 
 pub use self::global::GlobalDlmalloc;
 
@@ -72,44 +72,39 @@ impl Dlmalloc {
             if !new_ptr.is_null() {
                 let size = cmp::min(layout.size(), new_size);
                 ptr::copy_nonoverlapping(ptr, new_ptr, size);
-                self.dealloc(ptr, layout);
+                self.ptr_dealloc(ptr, layout);
             }
             new_ptr
         }
     }
 }
 
-fn to_result(ptr: *mut u8) -> Result<*mut u8, AllocErr> {
-    if !ptr.is_null() {
-        Ok(ptr)
-    } else {
-        Err(AllocErr)
-    }
+fn to_result(ptr: *mut u8) -> Result<NonNull<Void>, AllocErr> {
+    NonNull::new(ptr as *mut Void).ok_or(AllocErr)
 }
 
 unsafe impl Alloc for Dlmalloc {
     #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<Void>, AllocErr> {
         to_result(self.ptr_alloc(layout))
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout)
-        -> Result<*mut u8, AllocErr>
+    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonNull<Void>, AllocErr>
     {
         to_result(self.ptr_alloc_zeroed(layout))
     }
 
     #[inline]
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        self.ptr_dealloc(ptr, layout)
+    unsafe fn dealloc(&mut self, ptr: NonNull<Void>, layout: Layout) {
+        self.ptr_dealloc(ptr.cast().as_ptr(), layout)
     }
 
     #[inline]
     unsafe fn realloc(&mut self,
-                      ptr: *mut u8,
+                      ptr: NonNull<Void>,
                       layout: Layout,
-                      new_size: usize) -> Result<*mut u8, AllocErr> {
-        to_result(self.ptr_realloc(ptr, layout, new_size))
+                      new_size: usize) -> Result<NonNull<Void>, AllocErr> {
+        to_result(self.ptr_realloc(ptr.cast().as_ptr(), layout, new_size))
     }
 }
