@@ -27,8 +27,8 @@ unsafe impl Alloc for GlobalDlmalloc {
     unsafe fn realloc(&mut self,
                       ptr: *mut u8,
                       old_layout: Layout,
-                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
-        (&*self).realloc(ptr, old_layout, new_layout)
+                      new_size: usize) -> Result<*mut u8, AllocErr> {
+        (&*self).realloc(ptr, old_layout, new_size)
     }
 
     // fn oom(&mut self, err: AllocErr) -> ! {
@@ -49,24 +49,24 @@ unsafe impl Alloc for GlobalDlmalloc {
     unsafe fn realloc_excess(&mut self,
                              ptr: *mut u8,
                              layout: Layout,
-                             new_layout: Layout) -> Result<Excess, AllocErr> {
-        (&*self).realloc_excess(ptr, layout, new_layout)
+                             new_size: usize) -> Result<Excess, AllocErr> {
+        (&*self).realloc_excess(ptr, layout, new_size)
     }
 
     #[inline]
     unsafe fn grow_in_place(&mut self,
                             ptr: *mut u8,
                             layout: Layout,
-                            new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-        (&*self).grow_in_place(ptr, layout, new_layout)
+                            new_size: usize) -> Result<(), CannotReallocInPlace> {
+        (&*self).grow_in_place(ptr, layout, new_size)
     }
 
     #[inline]
     unsafe fn shrink_in_place(&mut self,
                               ptr: *mut u8,
                               layout: Layout,
-                              new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-        (&*self).shrink_in_place(ptr, layout, new_layout)
+                              new_size: usize) -> Result<(), CannotReallocInPlace> {
+        (&*self).shrink_in_place(ptr, layout, new_size)
     }
 }
 
@@ -116,8 +116,8 @@ unsafe impl<'a> Alloc for &'a GlobalDlmalloc {
     unsafe fn realloc(&mut self,
                       ptr: *mut u8,
                       old_layout: Layout,
-                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
-        get().realloc(ptr, old_layout, new_layout)
+                      new_size: usize) -> Result<*mut u8, AllocErr> {
+        get().realloc(ptr, old_layout, new_size)
     }
 
     // fn oom(&mut self, err: AllocErr) -> ! {
@@ -137,23 +137,23 @@ unsafe impl<'a> Alloc for &'a GlobalDlmalloc {
     unsafe fn realloc_excess(&mut self,
                              ptr: *mut u8,
                              layout: Layout,
-                             new_layout: Layout) -> Result<Excess, AllocErr> {
-        get().realloc_excess(ptr, layout, new_layout)
+                             new_size: usize) -> Result<Excess, AllocErr> {
+        get().realloc_excess(ptr, layout, new_size)
     }
 
     #[inline]
     unsafe fn grow_in_place(&mut self,
                             ptr: *mut u8,
                             layout: Layout,
-                            new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-        get().grow_in_place(ptr, layout, new_layout)
+                            new_size: usize) -> Result<(), CannotReallocInPlace> {
+        get().grow_in_place(ptr, layout, new_size)
     }
 
     #[inline]
     unsafe fn shrink_in_place(&mut self,
                               ptr: *mut u8,
                               layout: Layout,
-                              new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-        get().shrink_in_place(ptr, layout, new_layout)
+                              new_size: usize) -> Result<(), CannotReallocInPlace> {
+        get().shrink_in_place(ptr, layout, new_size)
     }
 }

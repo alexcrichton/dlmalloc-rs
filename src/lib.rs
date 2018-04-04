@@ -69,25 +69,22 @@ unsafe impl Alloc for Dlmalloc {
     #[inline]
     unsafe fn realloc(&mut self,
                       ptr: *mut u8,
-                      old_layout: Layout,
-                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
-        if old_layout.align() != new_layout.align() {
-            return Err(AllocErr)
-        }
-
-        if new_layout.align() <= self.0.malloc_alignment() {
-            let ptr = self.0.realloc(ptr, new_layout.size());
+                      layout: Layout,
+                      new_size: usize) -> Result<*mut u8, AllocErr> {
+        if layout.align() <= self.0.malloc_alignment() {
+            let ptr = self.0.realloc(ptr, new_size);
             if !ptr.is_null() {
                 Ok(ptr as *mut u8)
             } else {
                 Err(AllocErr)
             }
         } else {
-            let res = self.alloc(new_layout.clone());
+            let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+            let res = self.alloc(new_layout);
             if let Ok(new_ptr) = res {
-                let size = cmp::min(old_layout.size(), new_layout.size());
+                let size = cmp::min(layout.size(), new_size);
                 ptr::copy_nonoverlapping(ptr, new_ptr, size);
-                self.dealloc(ptr, old_layout);
+                self.dealloc(ptr, layout);
             }
             res
         }
@@ -111,24 +108,24 @@ unsafe impl Alloc for Dlmalloc {
     // unsafe fn realloc_excess(&mut self,
     //                          ptr: *mut u8,
     //                          layout: Layout,
-    //                          new_layout: Layout) -> Result<Excess, AllocErr> {
-    //     (&*self).realloc_excess(ptr, layout, new_layout)
+    //                          new_size: usize) -> Result<Excess, AllocErr> {
+    //     (&*self).realloc_excess(ptr, layout, new_size)
     // }
     //
     // #[inline]
     // unsafe fn grow_in_place(&mut self,
     //                         ptr: *mut u8,
     //                         layout: Layout,
-    //                         new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-    //     (&*self).grow_in_place(ptr, layout, new_layout)
+    //                         new_size: usize) -> Result<(), CannotReallocInPlace> {
+    //     (&*self).grow_in_place(ptr, layout, new_size)
     // }
     //
     // #[inline]
     // unsafe fn shrink_in_place(&mut self,
     //                           ptr: *mut u8,
     //                           layout: Layout,
-    //                           new_layout: Layout) -> Result<(), CannotReallocInPlace> {
-    //     (&*self).shrink_in_place(ptr, layout, new_layout)
+    //                           new_size: usize) -> Result<(), CannotReallocInPlace> {
+    //     (&*self).shrink_in_place(ptr, layout, new_size)
     // }
 }
 
@@ -154,7 +151,7 @@ unsafe impl Alloc for Dlmalloc {
 //     // unsafe fn realloc(&mut self,
 //     //                   ptr: *mut u8,
 //     //                   old_layout: Layout,
-//     //                   new_layout: Layout) -> Result<*mut u8, AllocErr> {
+//     //                   new_size: usize) -> Result<*mut u8, AllocErr> {
 //     //     panic!()
 //     // }
 //
