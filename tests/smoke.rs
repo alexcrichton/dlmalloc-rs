@@ -14,12 +14,12 @@ fn smoke() {
     let mut a = Dlmalloc::new();
     unsafe {
         let layout = Layout::new::<u8>();
-        let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
+        let ptr = a.alloc(layout.clone()).unwrap_or_else(|_| System.oom());
         *ptr = 9;
         assert_eq!(*ptr, 9);
         a.dealloc(ptr, layout.clone());
 
-        let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
+        let ptr = a.alloc(layout.clone()).unwrap_or_else(|_| System.oom());
         *ptr = 10;
         assert_eq!(*ptr, 10);
         a.dealloc(ptr, layout.clone());
@@ -59,8 +59,8 @@ fn stress() {
                 for i in 0..cmp::min(old.size(), new.size()) {
                     tmp.push(*ptr.offset(i as isize));
                 }
-                let ptr = a.realloc(ptr, old, new.clone()).unwrap_or_else(|e| {
-                    System.oom(e)
+                let ptr = a.realloc(ptr, old, new.clone()).unwrap_or_else(|_| {
+                    System.oom()
                 });
                 for (i, byte) in tmp.iter().enumerate() {
                     assert_eq!(*byte, *ptr.offset(i as isize));
@@ -83,9 +83,9 @@ fn stress() {
             let layout = Layout::from_size_align(size, align).unwrap();
 
             let ptr = if zero {
-                a.alloc_zeroed(layout.clone()).unwrap_or_else(|e| System.oom(e))
+                a.alloc_zeroed(layout.clone()).unwrap_or_else(|_| System.oom())
             } else {
-                a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e))
+                a.alloc(layout.clone()).unwrap_or_else(|_| System.oom())
             };
             for i in 0..layout.size() {
                 if zero {
