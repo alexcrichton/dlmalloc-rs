@@ -59,7 +59,7 @@ fn stress() {
                 for i in 0..cmp::min(old.size(), new.size()) {
                     tmp.push(*ptr.offset(i as isize));
                 }
-                let ptr = a.realloc(ptr, old, new.clone()).unwrap_or_else(|e| {
+                let ptr = Alloc::realloc(&mut a, ptr, old, new.clone()).unwrap_or_else(|e| {
                     System.oom(e)
                 });
                 for (i, byte) in tmp.iter().enumerate() {

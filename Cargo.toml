@@ -18,3 +18,4 @@ opt-level = 'z'
 
 [features]
 debug = []
+allocator-api = []

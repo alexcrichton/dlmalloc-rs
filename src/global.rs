@@ -100,24 +100,24 @@ impl Drop for Instance {
 
 unsafe impl<'a> Alloc for &'a GlobalDlmalloc {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
-        get().alloc(layout)
+        Alloc::alloc(&mut *get(), layout)
     }
 
     unsafe fn alloc_zeroed(&mut self, layout: Layout)
         -> Result<*mut u8, AllocErr>
     {
-        get().alloc_zeroed(layout)
+        Alloc::alloc_zeroed(&mut *get(), layout)
     }
 
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        get().dealloc(ptr, layout)
+        Alloc::dealloc(&mut *get(), ptr, layout)
     }
 
     unsafe fn realloc(&mut self,
                       ptr: *mut u8,
                       old_layout: Layout,
                       new_layout: Layout) -> Result<*mut u8, AllocErr> {
-        get().realloc(ptr, old_layout, new_layout)
+        Alloc::realloc(&mut *get(), ptr, old_layout, new_layout)
     }
 
     // fn oom(&mut self, err: AllocErr) -> ! {
