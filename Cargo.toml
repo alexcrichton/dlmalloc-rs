@@ -14,7 +14,7 @@ libc = { version = "0.2", default-features = false }
 rand = "0.3"
 
 [profile.release]
-opt-level = 'z'
+debug-assertions = true
 
 [features]
 debug = []

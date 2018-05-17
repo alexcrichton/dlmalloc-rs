@@ -1,3 +1,4 @@
+#![cfg(feature = "allocator-api")]
 #![feature(global_allocator)]
 
 extern crate dlmalloc;

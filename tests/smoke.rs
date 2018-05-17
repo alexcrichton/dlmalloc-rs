@@ -1,11 +1,7 @@
-#![feature(allocator_api)]
-
 extern crate dlmalloc;
 extern crate rand;
 
 use std::cmp;
-use std::heap::{Layout, Alloc, System};
-
 use dlmalloc::Dlmalloc;
 use rand::Rng;
 
@@ -13,16 +9,17 @@ use rand::Rng;
 fn smoke() {
     let mut a = Dlmalloc::new();
     unsafe {
-        let layout = Layout::new::<u8>();
-        let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
+        let ptr = a.malloc(1, 1);
+        assert!(!ptr.is_null());
         *ptr = 9;
         assert_eq!(*ptr, 9);
-        a.dealloc(ptr, layout.clone());
+        a.free(ptr, 1, 1);
 
-        let ptr = a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e));
+        let ptr = a.malloc(1, 1);
+        assert!(!ptr.is_null());
         *ptr = 10;
         assert_eq!(*ptr, 10);
-        a.dealloc(ptr, layout.clone());
+        a.free(ptr, 1, 1);
     }
 }
 
@@ -31,41 +28,39 @@ fn stress() {
     let mut a = Dlmalloc::new();
     let mut rng = rand::thread_rng();
     let mut ptrs = Vec::new();
+    let max = if cfg!(test_lots) { 1_000_000 } else { 1_000 };
     unsafe {
-        for _ in 0..1_000_000 {
+        for _ in 0..max {
             let free =
                 ptrs.len() > 0 &&
                 ((ptrs.len() < 10_000 && rng.gen_weighted_bool(3)) || rng.gen());
             if free {
                 let idx = rng.gen_range(0, ptrs.len());
-                let (ptr, layout): (_, Layout) = ptrs.swap_remove(idx);
-                a.dealloc(ptr, layout);
+                let (ptr, size, align) = ptrs.swap_remove(idx);
+                a.free(ptr, size, align);
                 continue
             }
 
             if ptrs.len() > 0 && rng.gen_weighted_bool(100) {
                 let idx = rng.gen_range(0, ptrs.len());
-                let (ptr, old): (_, Layout) = ptrs.swap_remove(idx);
-                let new = if rng.gen() {
-                    Layout::from_size_align(rng.gen_range(old.size(), old.size() * 2),
-                                            old.align()).unwrap()
-                } else if old.size() > 10 {
-                    Layout::from_size_align(rng.gen_range(old.size() / 2, old.size()),
-                                            old.align()).unwrap()
+                let (ptr, size, align) = ptrs.swap_remove(idx);
+                let new_size = if rng.gen() {
+                    rng.gen_range(size, size * 2)
+                } else if size > 10 {
+                    rng.gen_range(size / 2, size)
                 } else {
                     continue
                 };
                 let mut tmp = Vec::new();
-                for i in 0..cmp::min(old.size(), new.size()) {
+                for i in 0..cmp::min(size, new_size) {
                     tmp.push(*ptr.offset(i as isize));
                 }
-                let ptr = Alloc::realloc(&mut a, ptr, old, new.clone()).unwrap_or_else(|e| {
-                    System.oom(e)
-                });
+                let ptr = a.realloc(ptr, size, align, new_size);
+                assert!(!ptr.is_null());
                 for (i, byte) in tmp.iter().enumerate() {
                     assert_eq!(*byte, *ptr.offset(i as isize));
                 }
-                ptrs.push((ptr, new));
+                ptrs.push((ptr, new_size, align));
             }
 
             let size = if rng.gen() {
@@ -80,20 +75,18 @@ fn stress() {
             };
 
             let zero = rng.gen_weighted_bool(50);
-            let layout = Layout::from_size_align(size, align).unwrap();
-
             let ptr = if zero {
-                a.alloc_zeroed(layout.clone()).unwrap_or_else(|e| System.oom(e))
+                a.calloc(size, align)
             } else {
-                a.alloc(layout.clone()).unwrap_or_else(|e| System.oom(e))
+                a.malloc(size, align)
             };
-            for i in 0..layout.size() {
+            for i in 0..size {
                 if zero {
                     assert_eq!(*ptr.offset(i as isize), 0);
                 }
                 *ptr.offset(i as isize) = 0xce;
             }
-            ptrs.push((ptr, layout));
+            ptrs.push((ptr, size, align));
         }
     }
 }
