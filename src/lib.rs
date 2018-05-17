@@ -4,10 +4,7 @@
 #![no_std]
 
 #[cfg(feature = "allocator-api")]
-extern crate alloc;
-
-#[cfg(feature = "allocator-api")]
-use alloc::heap::{Alloc, Layout, AllocErr};
+use core::alloc::{Alloc, Layout, AllocErr, Opaque};
 use core::cmp;
 use core::ptr;
 
@@ -86,55 +83,42 @@ impl Dlmalloc {
 #[cfg(feature = "allocator-api")]
 unsafe impl Alloc for Dlmalloc {
     #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc(
+        &mut self,
+        layout: Layout
+    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
         let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
-        if ptr.is_null() {
-            Err(AllocErr::Exhausted { request: layout })
-        } else {
-            Ok(ptr)
-        }
+        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout)
-        -> Result<*mut u8, AllocErr>
-    {
-        let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
-        if ptr.is_null() {
-            Err(AllocErr::Exhausted { request: layout })
-        } else {
-            Ok(ptr)
-        }
+    unsafe fn dealloc(&mut self, ptr: ptr::NonNull<Opaque>, layout: Layout) {
+        <Dlmalloc>::free(self, ptr.as_ptr() as *mut u8, layout.size(), layout.align())
     }
 
     #[inline]
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        <Dlmalloc>::free(self, ptr, layout.size(), layout.align())
-    }
-
-    #[inline]
-    unsafe fn realloc(&mut self,
-                      ptr: *mut u8,
-                      old_layout: Layout,
-                      new_layout: Layout) -> Result<*mut u8, AllocErr> {
-        if old_layout.align() != new_layout.align() {
-            return Err(AllocErr::Unsupported {
-                details: "cannot change alignment on `realloc`",
-            })
-        }
+    unsafe fn realloc(
+        &mut self,
+        ptr: ptr::NonNull<Opaque>,
+        layout: Layout,
+        new_size: usize
+    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
         let ptr = <Dlmalloc>::realloc(
             self,
-            ptr,
-            old_layout.size(),
-            old_layout.align(),
-            new_layout.size(),
+            ptr.as_ptr() as *mut u8,
+            layout.size(),
+            layout.align(),
+            new_size,
         );
+        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
+    }
 
-
-        if ptr.is_null() {
-            Err(AllocErr::Exhausted { request: new_layout })
-        } else {
-            Ok(ptr)
-        }
+    #[inline]
+    unsafe fn alloc_zeroed(
+        &mut self,
+        layout: Layout
+    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
+        let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
+        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
     }
 }
