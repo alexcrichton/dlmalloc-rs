@@ -1,9 +1,13 @@
 use core::ptr;
-use core::arch::wasm32;
+
+extern {
+    #[link_name = "llvm.wasm.grow.memory.i32"]
+    fn grow_memory(pages: u32) -> i32;
+}
 
 pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     let pages = size / page_size();
-    let prev = wasm32::grow_memory(pages as i32);
+    let prev = grow_memory(pages as u32);
     if prev == -1 {
         return (ptr::null_mut(), 0, 0);
     }

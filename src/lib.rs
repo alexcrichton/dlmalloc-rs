@@ -1,5 +1,5 @@
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
-#![cfg_attr(target_arch = "wasm32", feature(stdsimd))]
+#![cfg_attr(target_arch = "wasm32", feature(link_llvm_intrinsics))]
 #![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
 #![no_std]
 
