@@ -4,14 +4,12 @@
 #![no_std]
 
 #[cfg(feature = "allocator-api")]
-use core::alloc::{Alloc, Layout, AllocErr, Opaque};
+use core::alloc::{Alloc, Layout, AllocErr};
 use core::cmp;
 use core::ptr;
 
-#[cfg(feature = "allocator-api")]
 pub use self::global::GlobalDlmalloc;
 
-#[cfg(feature = "allocator-api")]
 mod global;
 mod dlmalloc;
 
@@ -86,39 +84,39 @@ unsafe impl Alloc for Dlmalloc {
     unsafe fn alloc(
         &mut self,
         layout: Layout
-    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
+    ) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
-        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
+        ptr::NonNull::new(ptr).ok_or(AllocErr)
     }
 
     #[inline]
-    unsafe fn dealloc(&mut self, ptr: ptr::NonNull<Opaque>, layout: Layout) {
-        <Dlmalloc>::free(self, ptr.as_ptr() as *mut u8, layout.size(), layout.align())
+    unsafe fn dealloc(&mut self, ptr: ptr::NonNull<u8>, layout: Layout) {
+        <Dlmalloc>::free(self, ptr.as_ptr(), layout.size(), layout.align())
     }
 
     #[inline]
     unsafe fn realloc(
         &mut self,
-        ptr: ptr::NonNull<Opaque>,
+        ptr: ptr::NonNull<u8>,
         layout: Layout,
         new_size: usize
-    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
+    ) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::realloc(
             self,
-            ptr.as_ptr() as *mut u8,
+            ptr.as_ptr(),
             layout.size(),
             layout.align(),
             new_size,
         );
-        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
+        ptr::NonNull::new(ptr).ok_or(AllocErr)
     }
 
     #[inline]
     unsafe fn alloc_zeroed(
         &mut self,
         layout: Layout
-    ) -> Result<ptr::NonNull<Opaque>, AllocErr> {
+    ) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
-        ptr::NonNull::new(ptr as *mut Opaque).ok_or(AllocErr)
+        ptr::NonNull::new(ptr).ok_or(AllocErr)
     }
 }

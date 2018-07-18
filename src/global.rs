@@ -1,6 +1,9 @@
-use core::alloc::{Alloc, Layout, GlobalAlloc, AllocErr, Opaque};
+use core::alloc::{Layout, GlobalAlloc};
 use core::ops::{Deref, DerefMut};
+#[cfg(feature = "allocator-api")]
 use core::ptr::NonNull;
+#[cfg(feature = "allocator-api")]
+use core::alloc::{AllocErr, Alloc};
 
 use Dlmalloc;
 
@@ -8,58 +11,59 @@ pub struct GlobalDlmalloc;
 
 unsafe impl GlobalAlloc for GlobalDlmalloc {
     #[inline]
-    unsafe fn alloc(&self, layout: Layout) -> *mut Opaque {
-        <Dlmalloc>::malloc(&mut get(), layout.size(), layout.align()) as *mut Opaque
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        <Dlmalloc>::malloc(&mut get(), layout.size(), layout.align())
     }
 
     #[inline]
-    unsafe fn dealloc(&self, ptr: *mut Opaque, layout: Layout) {
-        <Dlmalloc>::free(&mut get(), ptr as *mut u8, layout.size(), layout.align())
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        <Dlmalloc>::free(&mut get(), ptr, layout.size(), layout.align())
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut Opaque {
-        <Dlmalloc>::calloc(&mut get(), layout.size(), layout.align()) as *mut Opaque
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        <Dlmalloc>::calloc(&mut get(), layout.size(), layout.align())
     }
 
     #[inline]
     unsafe fn realloc(
         &self,
-        ptr: *mut Opaque,
+        ptr: *mut u8,
         layout: Layout,
         new_size: usize
-    ) -> *mut Opaque {
+    ) -> *mut u8 {
         <Dlmalloc>::realloc(
             &mut get(),
-            ptr as *mut u8,
+            ptr,
             layout.size(),
             layout.align(),
             new_size,
-        ) as *mut Opaque
+        )
     }
 }
 
+#[cfg(feature = "allocator-api")]
 unsafe impl Alloc for GlobalDlmalloc {
     #[inline]
     unsafe fn alloc(
         &mut self,
         layout: Layout
-    ) -> Result<NonNull<Opaque>, AllocErr> {
+    ) -> Result<NonNull<u8>, AllocErr> {
         get().alloc(layout)
     }
 
     #[inline]
-    unsafe fn dealloc(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
+    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
         get().dealloc(ptr, layout)
     }
 
     #[inline]
     unsafe fn realloc(
         &mut self,
-        ptr: NonNull<Opaque>,
+        ptr: NonNull<u8>,
         layout: Layout,
         new_size: usize
-    ) -> Result<NonNull<Opaque>, AllocErr> {
+    ) -> Result<NonNull<u8>, AllocErr> {
         Alloc::realloc(&mut *get(), ptr, layout, new_size)
     }
 
@@ -67,7 +71,7 @@ unsafe impl Alloc for GlobalDlmalloc {
     unsafe fn alloc_zeroed(
         &mut self,
         layout: Layout
-    ) -> Result<NonNull<Opaque>, AllocErr> {
+    ) -> Result<NonNull<u8>, AllocErr> {
         get().alloc_zeroed(layout)
     }
 }
