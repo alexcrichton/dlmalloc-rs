@@ -34,10 +34,12 @@ pub fn can_release_part(_flags: u32) -> bool {
     false
 }
 
+#[cfg(feature = "global")]
 pub fn acquire_global_lock() {
     // single threaded, no need!
 }
 
+#[cfg(feature = "global")]
 pub fn release_global_lock() {
     // single threaded, no need!
 }
