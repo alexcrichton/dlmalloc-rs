@@ -109,10 +109,6 @@ fn leftshift_for_tree_index(x: u32) -> u32 {
 }
 
 impl Dlmalloc {
-    pub fn new() -> Dlmalloc {
-        DLMALLOC_INIT
-    }
-
     // TODO: can we get rid of this?
     pub fn malloc_alignment(&self) -> usize {
         mem::size_of::<usize>() * 2

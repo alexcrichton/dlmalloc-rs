@@ -7,6 +7,10 @@ use core::alloc::{AllocErr, Alloc};
 
 use Dlmalloc;
 
+/// An instance of a "global allocator" backed by `Dlmalloc`
+///
+/// This API requires the `global` feature is activated, and this type
+/// implements the `GlobalAlloc` trait in the standard library.
 pub struct GlobalDlmalloc;
 
 unsafe impl GlobalAlloc for GlobalDlmalloc {
