@@ -17,7 +17,12 @@ rand = "0.3"
 debug-assertions = true
 
 [features]
-default = ["global"]
+# Enable implementations of the `GlobalAlloc` standard library API, exporting a
+# new `GlobalDlmalloc` as well which implements this trait.
 global = []
+
+# Enable very expensive debug checks in this crate
 debug = []
+
+# Enable experimental support for the standard library's unstable allocator API.
 allocator-api = []

@@ -6,9 +6,11 @@ matrix:
     - rust: beta
     - rust: nightly
     - rust: nightly
+      name: "allocator api"
       script:
         - cargo test --features allocator-api
     - rust: nightly
+      name: "wasm"
       install: rustup target add wasm32-unknown-unknown
       script:
         - cargo build --target wasm32-unknown-unknown
@@ -17,6 +19,7 @@ matrix:
 script:
   - cargo test
   - cargo test --features debug
+  - cargo test --features global
   - cargo test --release
   - cargo test --release --features debug
   - RUSTFLAGS='--cfg test_lots' cargo test --release
