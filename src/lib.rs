@@ -8,8 +8,10 @@ use core::alloc::{Alloc, Layout, AllocErr};
 use core::cmp;
 use core::ptr;
 
+#[cfg(feature = "global")]
 pub use self::global::GlobalDlmalloc;
 
+#[cfg(feature = "global")]
 mod global;
 mod dlmalloc;
 

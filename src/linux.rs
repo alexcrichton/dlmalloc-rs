@@ -44,14 +44,17 @@ pub fn can_release_part(_flags: u32) -> bool {
     true
 }
 
+#[cfg(feature = "global")]
 static mut LOCK: libc::pthread_mutex_t = libc::PTHREAD_MUTEX_INITIALIZER;
 
+#[cfg(feature = "global")]
 pub fn acquire_global_lock() {
     unsafe {
         assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0)
     }
 }
 
+#[cfg(feature = "global")]
 pub fn release_global_lock() {
     unsafe {
         assert_eq!(libc::pthread_mutex_unlock(&mut LOCK), 0)

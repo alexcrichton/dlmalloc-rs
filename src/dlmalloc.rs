@@ -26,6 +26,8 @@ pub struct Dlmalloc {
     release_checks: usize,
 }
 
+unsafe impl Send for Dlmalloc {}
+
 pub const DLMALLOC_INIT: Dlmalloc = Dlmalloc {
     smallmap: 0,
     treemap: 0,

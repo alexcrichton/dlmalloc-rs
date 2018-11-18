@@ -17,5 +17,7 @@ rand = "0.3"
 debug-assertions = true
 
 [features]
+default = ["global"]
+global = []
 debug = []
 allocator-api = []
