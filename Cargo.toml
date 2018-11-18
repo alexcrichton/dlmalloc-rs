@@ -11,6 +11,9 @@ description = """
 A Rust port of the dlmalloc allocator
 """
 
+[package.metadata.docs.rs]
+features = ['global']
+
 [lib]
 doctest = false
 test = false
