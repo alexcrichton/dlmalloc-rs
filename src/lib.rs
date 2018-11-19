@@ -13,6 +13,7 @@
 
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
 #![cfg_attr(target_arch = "wasm32", feature(link_llvm_intrinsics))]
+#![cfg_attr(target_env = "sgx", feature(asm))]
 #![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
 #![no_std]
 #![deny(missing_docs)]
@@ -49,6 +50,10 @@ mod sys;
 
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
+mod sys;
+
+#[cfg(target_env = "sgx")]
+#[path = "sgx.rs"]
 mod sys;
 
 impl Dlmalloc {
