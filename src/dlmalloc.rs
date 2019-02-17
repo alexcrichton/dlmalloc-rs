@@ -92,7 +92,7 @@ fn align_up(a: usize, alignment: usize) -> usize {
 }
 
 fn left_bits(x: u32) -> u32 {
-    (x << 1) | (!(x << 1) + 1)
+    (x << 1) | (!(x << 1)).wrapping_add(1)
 }
 
 fn least_bit(x: u32) -> u32 {
@@ -150,7 +150,23 @@ impl Dlmalloc {
 
     // TODO: dox
     fn max_request(&self) -> usize {
-        (!self.min_chunk_size() + 1) << 2
+        // min_sys_alloc_space: the largest `X` such that
+        //   pad_request(X - 1)        -- minus 1, because requests of exactly
+        //                                `max_request` will not be honored
+        //   + self.top_foot_size()
+        //   + self.malloc_alignment()
+        //   + DEFAULT_GRANULARITY
+        // ==
+        //   usize::MAX
+        let min_sys_alloc_space = (
+                (!0 - (DEFAULT_GRANULARITY + self.top_foot_size() + self.malloc_alignment()) + 1)
+                & !self.malloc_alignment()
+            ) - self.chunk_overhead() + 1;
+
+        cmp::min(
+            (!self.min_chunk_size() + 1) << 2,
+            min_sys_alloc_space
+        )
     }
 
     fn pad_request(&self, amt: usize) -> usize {
@@ -334,6 +350,7 @@ impl Dlmalloc {
 
     unsafe fn sys_alloc(&mut self, size: usize) -> *mut u8 {
         self.check_malloc_state();
+        // keep in sync with max_request
         let asize = align_up(size + self.top_foot_size() + self.malloc_alignment(),
                              DEFAULT_GRANULARITY);
 
@@ -1749,5 +1766,46 @@ impl Segment {
 
     unsafe fn top(seg: *mut Segment) -> *mut u8 {
         (*seg).base.offset((*seg).size as isize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Prime the allocator with some allocations such that there will be free
+    // chunks in the treemap
+    unsafe fn setup_treemap(a: &mut Dlmalloc) {
+        let large_request_size = NSMALLBINS * (1 << SMALLBIN_SHIFT);
+        assert!(!a.is_small(large_request_size));
+        let large_request1 = a.malloc(large_request_size);
+        assert_ne!(large_request1, ptr::null_mut());
+        let large_request2 = a.malloc(large_request_size);
+        assert_ne!(large_request2, ptr::null_mut());
+        a.free(large_request1);
+        assert_ne!(a.treemap, 0);
+    }
+
+    #[test]
+    // Test allocating, with a non-empty treemap, a specific size that used to
+    // trigger an integer overflow bug
+    fn treemap_alloc_overflow_minimal() {
+        let mut a = DLMALLOC_INIT;
+        unsafe {
+            setup_treemap(&mut a);
+            let min_idx31_size = (0xc000 << TREEBIN_SHIFT) - a.chunk_overhead() + 1;
+            assert_ne!(a.malloc(min_idx31_size), ptr::null_mut());
+        }
+    }
+
+    #[test]
+    // Test allocating the maximum request size with a non-empty treemap
+    fn treemap_alloc_max() {
+        let mut a = DLMALLOC_INIT;
+        unsafe {
+            setup_treemap(&mut a);
+            let max_request_size = a.max_request() - 1;
+            assert_eq!(a.malloc(max_request_size), ptr::null_mut());
+        }
     }
 }
