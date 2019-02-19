@@ -22,10 +22,10 @@ use core::alloc::{Alloc, Layout, AllocErr};
 use core::cmp;
 use core::ptr;
 
-#[cfg(feature = "global")]
+#[cfg(all(feature = "global", not(test)))]
 pub use self::global::GlobalDlmalloc;
 
-#[cfg(feature = "global")]
+#[cfg(all(feature = "global", not(test)))]
 mod global;
 mod dlmalloc;
 
