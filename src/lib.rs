@@ -18,16 +18,16 @@
 #![deny(missing_docs)]
 
 #[cfg(feature = "allocator-api")]
-use core::alloc::{Alloc, Layout, AllocErr};
+use core::alloc::{Alloc, AllocErr, Layout};
 use core::cmp;
 use core::ptr;
 
 #[cfg(all(feature = "global", not(test)))]
 pub use self::global::GlobalDlmalloc;
 
+mod dlmalloc;
 #[cfg(all(feature = "global", not(test)))]
 mod global;
-mod dlmalloc;
 
 /// An allocator instance
 ///
@@ -109,11 +109,13 @@ impl Dlmalloc {
     /// Safety and contracts are largely governed by the `GlobalAlloc::realloc`
     /// method contracts.
     #[inline]
-    pub unsafe fn realloc(&mut self,
-                          ptr: *mut u8,
-                          old_size: usize,
-                          old_align: usize,
-                          new_size: usize) -> *mut u8 {
+    pub unsafe fn realloc(
+        &mut self,
+        ptr: *mut u8,
+        old_size: usize,
+        old_align: usize,
+        new_size: usize,
+    ) -> *mut u8 {
         if old_align <= self.0.malloc_alignment() {
             self.0.realloc(ptr, new_size)
         } else {
@@ -131,10 +133,7 @@ impl Dlmalloc {
 #[cfg(feature = "allocator-api")]
 unsafe impl Alloc for Dlmalloc {
     #[inline]
-    unsafe fn alloc(
-        &mut self,
-        layout: Layout
-    ) -> Result<ptr::NonNull<u8>, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
         ptr::NonNull::new(ptr).ok_or(AllocErr)
     }
@@ -149,23 +148,14 @@ unsafe impl Alloc for Dlmalloc {
         &mut self,
         ptr: ptr::NonNull<u8>,
         layout: Layout,
-        new_size: usize
+        new_size: usize,
     ) -> Result<ptr::NonNull<u8>, AllocErr> {
-        let ptr = <Dlmalloc>::realloc(
-            self,
-            ptr.as_ptr(),
-            layout.size(),
-            layout.align(),
-            new_size,
-        );
+        let ptr = <Dlmalloc>::realloc(self, ptr.as_ptr(), layout.size(), layout.align(), new_size);
         ptr::NonNull::new(ptr).ok_or(AllocErr)
     }
 
     #[inline]
-    unsafe fn alloc_zeroed(
-        &mut self,
-        layout: Layout
-    ) -> Result<ptr::NonNull<u8>, AllocErr> {
+    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
         ptr::NonNull::new(ptr).ok_or(AllocErr)
     }

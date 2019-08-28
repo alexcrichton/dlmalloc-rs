@@ -1,10 +1,10 @@
 use core::ptr;
-use core::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering, ATOMIC_BOOL_INIT};
 
 // Do not remove inline: will result in relocation failure
 #[inline(always)]
 unsafe fn rel_ptr_mut<T>(offset: u64) -> *mut T {
-    (image_base()+offset) as *mut T
+    (image_base() + offset) as *mut T
 }
 
 // Do not remove inline: will result in relocation failure
@@ -13,12 +13,12 @@ unsafe fn rel_ptr_mut<T>(offset: u64) -> *mut T {
 #[inline(always)]
 fn image_base() -> u64 {
     let base;
-    unsafe{asm!("lea IMAGE_BASE(%rip),$0":"=r"(base))};
+    unsafe { asm!("lea IMAGE_BASE(%rip),$0":"=r"(base)) };
     base
 }
 
 pub unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
-    extern {
+    extern "C" {
         static HEAP_BASE: u64;
         static HEAP_SIZE: usize;
     }
@@ -31,9 +31,7 @@ pub unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
     }
 }
 
-pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool)
-    -> *mut u8
-{
+pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
     ptr::null_mut()
 }
 

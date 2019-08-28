@@ -1,5 +1,5 @@
-use core::ptr;
 use core::arch::wasm32;
+use core::ptr;
 
 pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     let pages = size / page_size();
@@ -10,9 +10,7 @@ pub unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
     ((prev * page_size()) as *mut u8, pages * page_size(), 0)
 }
 
-pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool)
-    -> *mut u8
-{
+pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
     // TODO: I think this can be implemented near the end?
     ptr::null_mut()
 }

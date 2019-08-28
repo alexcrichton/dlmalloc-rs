@@ -1,9 +1,9 @@
 extern crate dlmalloc;
 extern crate rand;
 
-use std::cmp;
 use dlmalloc::Dlmalloc;
 use rand::Rng;
+use std::cmp;
 
 #[test]
 fn smoke() {
@@ -32,13 +32,12 @@ fn stress() {
     unsafe {
         for _ in 0..max {
             let free =
-                ptrs.len() > 0 &&
-                ((ptrs.len() < 10_000 && rng.gen_weighted_bool(3)) || rng.gen());
+                ptrs.len() > 0 && ((ptrs.len() < 10_000 && rng.gen_weighted_bool(3)) || rng.gen());
             if free {
                 let idx = rng.gen_range(0, ptrs.len());
                 let (ptr, size, align) = ptrs.swap_remove(idx);
                 a.free(ptr, size, align);
-                continue
+                continue;
             }
 
             if ptrs.len() > 0 && rng.gen_weighted_bool(100) {
@@ -49,7 +48,7 @@ fn stress() {
                 } else if size > 10 {
                     rng.gen_range(size / 2, size)
                 } else {
-                    continue
+                    continue;
                 };
                 let mut tmp = Vec::new();
                 for i in 0..cmp::min(size, new_size) {
