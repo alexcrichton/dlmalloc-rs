@@ -1,5 +1,5 @@
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering, ATOMIC_BOOL_INIT};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // Do not remove inline: will result in relocation failure
 #[inline(always)]
@@ -13,7 +13,7 @@ unsafe fn rel_ptr_mut<T>(offset: u64) -> *mut T {
 #[inline(always)]
 fn image_base() -> u64 {
     let base;
-    unsafe { asm!("lea IMAGE_BASE(%rip),$0":"=r"(base)) };
+    unsafe { llvm_asm!("lea IMAGE_BASE(%rip),$0":"=r"(base)) };
     base
 }
 
@@ -22,7 +22,7 @@ pub unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
         static HEAP_BASE: u64;
         static HEAP_SIZE: usize;
     }
-    static INIT: AtomicBool = ATOMIC_BOOL_INIT;
+    static INIT: AtomicBool = AtomicBool::new(false);
     // No ordering requirement since this function is protected by the global lock.
     if !INIT.swap(true, Ordering::Relaxed) {
         (rel_ptr_mut(HEAP_BASE), HEAP_SIZE, 0)

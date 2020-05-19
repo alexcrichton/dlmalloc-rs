@@ -12,7 +12,7 @@
 //! testing this crate.
 
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
-#![cfg_attr(target_env = "sgx", feature(asm))]
+#![cfg_attr(target_env = "sgx", feature(llvm_asm))]
 #![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
 #![no_std]
 #![deny(missing_docs)]
