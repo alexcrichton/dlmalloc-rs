@@ -42,4 +42,5 @@ debug = []
 
 # Enable experimental support for the standard library's unstable allocator API.
 allocator-api = []
+nightly = []
 rustc-dep-of-std = ['core', 'compiler_builtins/rustc-dep-of-std']

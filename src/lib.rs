@@ -17,8 +17,12 @@
 #![no_std]
 #![deny(missing_docs)]
 
+#[cfg(all(feature = "allocator-api", not(feature = "nightly")))]
+use core::alloc::Alloc;
+#[cfg(all(feature = "allocator-api", feature = "nightly"))]
+use core::alloc::AllocRef;
 #[cfg(feature = "allocator-api")]
-use core::alloc::{Alloc, AllocErr, Layout};
+use core::alloc::{AllocErr, Layout};
 use core::cmp;
 use core::ptr;
 
@@ -130,7 +134,7 @@ impl Dlmalloc {
     }
 }
 
-#[cfg(feature = "allocator-api")]
+#[cfg(all(feature = "allocator-api", not(feature = "nightly")))]
 unsafe impl Alloc for Dlmalloc {
     #[inline]
     unsafe fn alloc(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
@@ -158,5 +162,47 @@ unsafe impl Alloc for Dlmalloc {
     unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
         let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
         ptr::NonNull::new(ptr).ok_or(AllocErr)
+    }
+}
+
+#[cfg(all(feature = "allocator-api", feature = "nightly"))]
+unsafe impl AllocRef for Dlmalloc {
+    #[inline]
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<(ptr::NonNull<u8>, usize), AllocErr> {
+        let layout_size = layout.size();
+        let ptr = <Dlmalloc>::malloc(self, layout_size, layout.align());
+        ptr::NonNull::new(ptr)
+            .ok_or(AllocErr)
+            .map(|ptr| (ptr, layout_size))
+    }
+
+    #[inline]
+    unsafe fn dealloc(&mut self, ptr: ptr::NonNull<u8>, layout: Layout) {
+        <Dlmalloc>::free(self, ptr.as_ptr(), layout.size(), layout.align())
+    }
+
+    #[inline]
+    unsafe fn realloc(
+        &mut self,
+        ptr: ptr::NonNull<u8>,
+        layout: Layout,
+        new_size: usize,
+    ) -> Result<(ptr::NonNull<u8>, usize), AllocErr> {
+        let ptr = <Dlmalloc>::realloc(self, ptr.as_ptr(), layout.size(), layout.align(), new_size);
+        ptr::NonNull::new(ptr)
+            .ok_or(AllocErr)
+            .map(|ptr| (ptr, new_size))
+    }
+
+    #[inline]
+    unsafe fn alloc_zeroed(
+        &mut self,
+        layout: Layout,
+    ) -> Result<(ptr::NonNull<u8>, usize), AllocErr> {
+        let layout_size = layout.size();
+        let ptr = <Dlmalloc>::calloc(self, layout_size, layout.align());
+        ptr::NonNull::new(ptr)
+            .ok_or(AllocErr)
+            .map(|ptr| (ptr, layout_size))
     }
 }
