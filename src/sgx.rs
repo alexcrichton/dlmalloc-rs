@@ -13,7 +13,7 @@ unsafe fn rel_ptr_mut<T>(offset: u64) -> *mut T {
 #[inline(always)]
 fn image_base() -> u64 {
     let base;
-    unsafe { asm!("lea IMAGE_BASE(%rip),$0":"=r"(base)) };
+    unsafe { llvm_asm!("lea IMAGE_BASE(%rip),$0":"=r"(base)) };
     base
 }
 
