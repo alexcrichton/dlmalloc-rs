@@ -1,6 +1,8 @@
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use System;
+
 // Do not remove inline: will result in relocation failure
 #[inline(always)]
 unsafe fn rel_ptr_mut<T>(offset: u64) -> *mut T {
@@ -17,51 +19,46 @@ fn image_base() -> u64 {
     base
 }
 
-/// Allocs system resources
-pub unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
-    extern "C" {
-        static HEAP_BASE: u64;
-        static HEAP_SIZE: usize;
+/// System interface implementation for SGX platform
+pub struct Platform;
+
+impl System for Platform {
+    /// Allocs system resources
+    unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
+        extern "C" {
+            static HEAP_BASE: u64;
+            static HEAP_SIZE: usize;
+        }
+        static INIT: AtomicBool = AtomicBool::new(false);
+        // No ordering requirement since this function is protected by the global lock.
+        if !INIT.swap(true, Ordering::Relaxed) {
+            (rel_ptr_mut(HEAP_BASE), HEAP_SIZE, 0)
+        } else {
+            (ptr::null_mut(), 0, 0)
+        }
     }
-    static INIT: AtomicBool = AtomicBool::new(false);
-    // No ordering requirement since this function is protected by the global lock.
-    if !INIT.swap(true, Ordering::Relaxed) {
-        (rel_ptr_mut(HEAP_BASE), HEAP_SIZE, 0)
-    } else {
-        (ptr::null_mut(), 0, 0)
+
+    unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
+        ptr::null_mut()
     }
-}
 
-pub unsafe fn remap(_ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
-    ptr::null_mut()
-}
+    unsafe fn free_part(_ptr: *mut u8, _oldsize: usize, _newsize: usize) -> bool {
+        false
+    }
 
-pub unsafe fn free_part(_ptr: *mut u8, _oldsize: usize, _newsize: usize) -> bool {
-    false
-}
+    unsafe fn free(_ptr: *mut u8, _size: usize) -> bool {
+        false
+    }
 
-pub unsafe fn free(_ptr: *mut u8, _size: usize) -> bool {
-    false
-}
+    fn can_release_part(_flags: u32) -> bool {
+        false
+    }
 
-pub fn can_release_part(_flags: u32) -> bool {
-    false
-}
+    fn allocates_zeros() -> bool {
+        false
+    }
 
-#[cfg(feature = "global")]
-pub fn acquire_global_lock() {
-    compile_error!("The `global` feature is not implemented for the SGX platform")
-}
-
-#[cfg(feature = "global")]
-pub fn release_global_lock() {
-    compile_error!("The `global` feature is not implemented for the SGX platform")
-}
-
-pub fn allocates_zeros() -> bool {
-    false
-}
-
-pub fn page_size() -> usize {
-    0x1000
+    fn page_size() -> usize {
+        0x1000
+    }
 }

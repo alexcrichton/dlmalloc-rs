@@ -12,15 +12,16 @@
 //! testing this crate.
 
 #![cfg_attr(feature = "allocator-api", feature(allocator_api))]
-#![cfg_attr(target_env = "sgx", feature(llvm_asm))]
 #![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
 #![no_std]
 #![deny(missing_docs)]
+#![feature(llvm_asm)]
 
 #[cfg(feature = "allocator-api")]
 use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
+pub use sys::Platform;
 
 #[cfg(all(feature = "global", not(test)))]
 pub use self::global::GlobalDlmalloc;
@@ -30,74 +31,7 @@ mod dlmalloc;
 mod global;
 
 /// A platform interface
-#[cfg(target_env = "sgx")]
 pub trait System: Send {
-    /// Allocates a memory region of `size` bytes
-    unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
-        sys::alloc(size)
-    }
-
-    /// Remaps a memory region
-    unsafe fn remap(ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8 {
-        sys::remap(ptr, oldsize, newsize, can_move)
-    }
-
-    /// Frees a part of a memory region
-    unsafe fn free_part(ptr: *mut u8, oldsize: usize, newsize: usize) -> bool {
-        sys::free_part(ptr, oldsize, newsize)
-    }
-
-    /// Frees an entire memory region
-    unsafe fn free(ptr: *mut u8, size: usize) -> bool {
-        sys::free(ptr, size)
-    }
-
-    /// Indicates if the platform can release a part of memory
-    fn can_release_part(flags: u32) -> bool {
-        sys::can_release_part(flags)
-    }
-
-    /// Allocates a memory region of zeros
-    fn allocates_zeros() -> bool {
-        sys::allocates_zeros()
-    }
-
-    /// Returns the page size
-    fn page_size() -> usize {
-        sys::page_size()
-    }
-}
-
-/// A platform interface for platforms that support the global lock
-#[cfg(feature = "global")]
-pub trait GlobalSystem: System {
-    /// Acquires the global lock
-    fn acquire_global_lock();
-
-    /// Releases the global lock
-    fn release_global_lock();
-}
-
-/// Struct to implement the System trait
-#[cfg(target_env = "sgx")]
-pub struct Platform;
-#[cfg(target_env = "sgx")]
-impl System for Platform {}
-#[cfg(feature = "global")]
-#[cfg(target_env = "sgx")]
-impl GlobalSystem for Platform {
-    fn acquire_global_lock() {
-        sys::acquire_global_lock()
-    }
-
-    fn release_global_lock() {
-        sys::release_global_lock()
-    }
-}
-
-#[cfg(not(target_env = "sgx"))]
-/// A platform interface
-pub trait System {
     /// Allocates a memory region of `size` bytes
     unsafe fn alloc(size: usize) -> (*mut u8, usize, u32);
 
@@ -120,6 +54,16 @@ pub trait System {
     fn page_size() -> usize;
 }
 
+/// A platform interface for platforms that support the global lock
+#[cfg(feature = "global")]
+pub trait GlobalSystem: System {
+    /// Acquires the global lock
+    fn acquire_global_lock();
+
+    /// Releases the global lock
+    fn release_global_lock();
+}
+
 /// An allocator instance
 ///
 /// Instances of this type are used to allocate blocks of memory. For best
@@ -130,29 +74,20 @@ pub struct Dlmalloc<S>(dlmalloc::Dlmalloc<S>);
 /// Constant initializer for `Dlmalloc` structure.
 pub const DLMALLOC_INIT: Dlmalloc<Platform> = Dlmalloc::new();
 
-#[cfg(target_arch = "wasm32")]
-#[path = "wasm.rs"]
+#[cfg(target_env = "sgx")]
+#[path = "sgx.rs"]
 mod sys;
 
 #[cfg(target_arch = "wasm32")]
-pub use sys::Platform;
+#[path = "wasm.rs"]
+mod sys;
 
 #[cfg(target_os = "macos")]
 #[path = "macos.rs"]
 mod sys;
 
-#[cfg(target_os = "macos")]
-pub use sys::Platform;
-
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
-mod sys;
-
-#[cfg(target_os = "linux")]
-pub use sys::Platform;
-
-#[cfg(target_env = "sgx")]
-#[path = "sgx.rs"]
 mod sys;
 
 impl<S> Dlmalloc<S> {
