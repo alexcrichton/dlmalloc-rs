@@ -15,12 +15,12 @@
 #![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
 #![no_std]
 #![deny(missing_docs)]
-#![feature(llvm_asm)]
 
 #[cfg(feature = "allocator-api")]
 use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
+#[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
 pub use sys::Platform;
 
 #[cfg(all(feature = "global", not(test)))]
@@ -72,11 +72,8 @@ pub trait GlobalSystem: System {
 pub struct Dlmalloc<S>(dlmalloc::Dlmalloc<S>);
 
 /// Constant initializer for `Dlmalloc` structure.
+#[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
 pub const DLMALLOC_INIT: Dlmalloc<Platform> = Dlmalloc::new();
-
-#[cfg(target_env = "sgx")]
-#[path = "sgx.rs"]
-mod sys;
 
 #[cfg(target_arch = "wasm32")]
 #[path = "wasm.rs"]

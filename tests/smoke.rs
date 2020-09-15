@@ -1,11 +1,15 @@
 extern crate dlmalloc;
 extern crate rand;
 
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
 use dlmalloc::{Dlmalloc, Platform};
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
 use rand::Rng;
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
 use std::cmp;
 
 #[test]
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
 fn smoke() {
     let mut a: Dlmalloc<Platform> = Dlmalloc::new();
     unsafe {
@@ -24,6 +28,7 @@ fn smoke() {
 }
 
 #[test]
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
 fn stress() {
     let mut a: Dlmalloc<Platform> = Dlmalloc::new();
     let mut rng = rand::thread_rng();
