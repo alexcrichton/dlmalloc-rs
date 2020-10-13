@@ -1,5 +1,5 @@
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering, ATOMIC_BOOL_INIT};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // Do not remove inline: will result in relocation failure
 #[inline(always)]
@@ -17,12 +17,13 @@ fn image_base() -> u64 {
     base
 }
 
+/// Allocs system resources
 pub unsafe fn alloc(_size: usize) -> (*mut u8, usize, u32) {
     extern "C" {
         static HEAP_BASE: u64;
         static HEAP_SIZE: usize;
     }
-    static INIT: AtomicBool = ATOMIC_BOOL_INIT;
+    static INIT: AtomicBool = AtomicBool::new(false);
     // No ordering requirement since this function is protected by the global lock.
     if !INIT.swap(true, Ordering::Relaxed) {
         (rel_ptr_mut(HEAP_BASE), HEAP_SIZE, 0)

@@ -29,15 +29,73 @@ mod dlmalloc;
 #[cfg(all(feature = "global", not(test)))]
 mod global;
 
+/// A platform interface
+pub trait System: Send {
+    /// Allocates a memory region of `size` bytes
+    unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
+        sys::alloc(size)
+    }
+
+    /// Remaps a memory region
+    unsafe fn remap(ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8 {
+        sys::remap(ptr, oldsize, newsize, can_move)
+    }
+
+    /// Frees a part of a memory region
+    unsafe fn free_part(ptr: *mut u8, oldsize: usize, newsize: usize) -> bool {
+        sys::free_part(ptr, oldsize, newsize)
+    }
+
+    /// Frees an entire memory region
+    unsafe fn free(ptr: *mut u8, size: usize) -> bool {
+        sys::free(ptr, size)
+    }
+
+    /// Indicates if the platform can release a part of memory
+    fn can_release_part(flags: u32) -> bool {
+        sys::can_release_part(flags)
+    }
+
+    /// Allocates a memory region of zeros
+    fn allocates_zeros() -> bool {
+        sys::allocates_zeros()
+    }
+
+    /// Returns the page size
+    fn page_size() -> usize {
+        sys::page_size()
+    }
+}
+
+/// A platform interface for platforms that support the global lock
+#[cfg(feature = "global")]
+pub trait GlobalSystem: System {
+    /// Acquires the global lock
+    fn acquire_global_lock() {
+        sys::acquire_global_lock()
+    }
+
+    /// Releases the global lock
+    fn release_global_lock() {
+        sys::release_global_lock()
+    }
+}
+
+/// Struct to implement the System trait
+pub struct Platform;
+impl System for Platform {}
+#[cfg(feature = "global")]
+impl GlobalSystem for Platform {}
+
 /// An allocator instance
 ///
 /// Instances of this type are used to allocate blocks of memory. For best
 /// results only use one of these. Currently doesn't implement `Drop` to release
 /// lingering memory back to the OS. That may happen eventually though!
-pub struct Dlmalloc(dlmalloc::Dlmalloc);
+pub struct Dlmalloc<S>(dlmalloc::Dlmalloc<S>);
 
 /// Constant initializer for `Dlmalloc` structure.
-pub const DLMALLOC_INIT: Dlmalloc = Dlmalloc(dlmalloc::DLMALLOC_INIT);
+pub const DLMALLOC_INIT: Dlmalloc<Platform> = Dlmalloc::new();
 
 #[cfg(target_arch = "wasm32")]
 #[path = "wasm.rs"]
@@ -55,12 +113,14 @@ mod sys;
 #[path = "sgx.rs"]
 mod sys;
 
-impl Dlmalloc {
-    /// Creates a new instance of an allocator, same as `DLMALLOC_INIT`.
-    pub fn new() -> Dlmalloc {
-        DLMALLOC_INIT
+impl<S> Dlmalloc<S> {
+    /// Creates a new instance of an allocator
+    pub const fn new() -> Dlmalloc<S> {
+        Dlmalloc(dlmalloc::Dlmalloc::init())
     }
+}
 
+impl<S: System> Dlmalloc<S> {
     /// Allocates `size` bytes with `align` align.
     ///
     /// Returns a null pointer if allocation fails. Returns a valid pointer

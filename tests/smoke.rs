@@ -1,13 +1,13 @@
 extern crate dlmalloc;
 extern crate rand;
 
-use dlmalloc::Dlmalloc;
+use dlmalloc::{Dlmalloc, Platform};
 use rand::Rng;
 use std::cmp;
 
 #[test]
 fn smoke() {
-    let mut a = Dlmalloc::new();
+    let mut a: Dlmalloc<Platform> = Dlmalloc::new();
     unsafe {
         let ptr = a.malloc(1, 1);
         assert!(!ptr.is_null());
@@ -25,7 +25,7 @@ fn smoke() {
 
 #[test]
 fn stress() {
-    let mut a = Dlmalloc::new();
+    let mut a: Dlmalloc<Platform> = Dlmalloc::new();
     let mut rng = rand::thread_rng();
     let mut ptrs = Vec::new();
     let max = if cfg!(test_lots) { 1_000_000 } else { 1_000 };
