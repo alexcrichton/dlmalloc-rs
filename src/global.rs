@@ -5,6 +5,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 #[cfg(feature = "allocator-api")]
 use core::ptr::NonNull;
+use DLMALLOC_INIT;
 
 use Dlmalloc;
 
@@ -17,22 +18,22 @@ pub struct GlobalDlmalloc;
 unsafe impl GlobalAlloc for GlobalDlmalloc {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        <Dlmalloc<Platform>>::malloc(&mut get(), layout.size(), layout.align())
+        <Dlmalloc>::malloc(&mut get(), layout.size(), layout.align())
     }
 
     #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        <Dlmalloc<Platform>>::free(&mut get(), ptr, layout.size(), layout.align())
+        <Dlmalloc>::free(&mut get(), ptr, layout.size(), layout.align())
     }
 
     #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        <Dlmalloc<Platform>>::calloc(&mut get(), layout.size(), layout.align())
+        <Dlmalloc>::calloc(&mut get(), layout.size(), layout.align())
     }
 
     #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        <Dlmalloc<Platform>>::realloc(&mut get(), ptr, layout.size(), layout.align(), new_size)
+        <Dlmalloc>::realloc(&mut get(), ptr, layout.size(), layout.align(), new_size)
     }
 }
 
@@ -54,7 +55,7 @@ unsafe impl AllocRef for GlobalDlmalloc {
     }
 }
 
-static mut DLMALLOC: Dlmalloc<Platform> = Dlmalloc::new();
+static mut DLMALLOC: Dlmalloc = DLMALLOC_INIT;
 
 struct Instance;
 
@@ -64,14 +65,14 @@ unsafe fn get() -> Instance {
 }
 
 impl Deref for Instance {
-    type Target = Dlmalloc<Platform>;
-    fn deref(&self) -> &Dlmalloc<Platform> {
+    type Target = Dlmalloc;
+    fn deref(&self) -> &Dlmalloc {
         unsafe { &DLMALLOC }
     }
 }
 
 impl DerefMut for Instance {
-    fn deref_mut(&mut self) -> &mut Dlmalloc<Platform> {
+    fn deref_mut(&mut self) -> &mut Dlmalloc {
         unsafe { &mut DLMALLOC }
     }
 }

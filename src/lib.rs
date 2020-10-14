@@ -21,7 +21,7 @@ use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
 #[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
-pub use sys::Platform;
+use sys::Platform;
 
 #[cfg(all(feature = "global", not(test)))]
 pub use self::global::GlobalDlmalloc;
@@ -69,6 +69,15 @@ pub trait GlobalSystem: System {
 /// Instances of this type are used to allocate blocks of memory. For best
 /// results only use one of these. Currently doesn't implement `Drop` to release
 /// lingering memory back to the OS. That may happen eventually though!
+#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
+pub struct Dlmalloc<S = Platform>(dlmalloc::Dlmalloc<S>);
+
+/// An allocator instance
+///
+/// Instances of this type are used to allocate blocks of memory. For best
+/// results only use one of these. Currently doesn't implement `Drop` to release
+/// lingering memory back to the OS. That may happen eventually though!
+#[cfg(not(any(target_os = "linux", target_arch = "wasm32", target_os = "macos")))]
 pub struct Dlmalloc<S>(dlmalloc::Dlmalloc<S>);
 
 /// Constant initializer for `Dlmalloc` structure.
