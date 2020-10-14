@@ -30,6 +30,7 @@ mod dlmalloc;
 mod global;
 
 /// A platform interface
+#[cfg(any(target_arch = "wasm32", target_os = "macos", target_env = "sgx"))]
 pub trait System: Send {
     /// Allocates a memory region of `size` bytes
     unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
@@ -71,21 +72,53 @@ pub trait System: Send {
 #[cfg(feature = "global")]
 pub trait GlobalSystem: System {
     /// Acquires the global lock
+    fn acquire_global_lock();
+
+    /// Releases the global lock
+    fn release_global_lock();
+}
+
+/// Struct to implement the System trait
+#[cfg(any(target_arch = "wasm32", target_os = "macos", target_env = "sgx"))]
+pub struct Platform;
+#[cfg(any(target_arch = "wasm32", target_os = "macos", target_env = "sgx"))]
+impl System for Platform {}
+#[cfg(feature = "global")]
+#[cfg(any(target_arch = "wasm32", target_os = "macos", target_env = "sgx"))]
+impl GlobalSystem for Platform {
     fn acquire_global_lock() {
         sys::acquire_global_lock()
     }
 
-    /// Releases the global lock
     fn release_global_lock() {
         sys::release_global_lock()
     }
 }
 
-/// Struct to implement the System trait
-pub struct Platform;
-impl System for Platform {}
-#[cfg(feature = "global")]
-impl GlobalSystem for Platform {}
+#[cfg(not(any(target_arch = "wasm32", target_os = "macos", target_env = "sgx")))]
+/// A platform interface
+pub trait System {
+    /// Allocates a memory region of `size` bytes
+    unsafe fn alloc(size: usize) -> (*mut u8, usize, u32);
+
+    /// Remaps a memory region
+    unsafe fn remap(ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8;
+
+    /// Frees a part of a memory region
+    unsafe fn free_part(ptr: *mut u8, oldsize: usize, newsize: usize) -> bool;
+
+    /// Frees an entire memory region
+    unsafe fn free(ptr: *mut u8, size: usize) -> bool;
+
+    /// Indicates if the platform can release a part of memory
+    fn can_release_part(flags: u32) -> bool;
+
+    /// Allocates a memory region of zeros
+    fn allocates_zeros() -> bool;
+
+    /// Returns the page size
+    fn page_size() -> usize;
+}
 
 /// An allocator instance
 ///
@@ -108,6 +141,9 @@ mod sys;
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 mod sys;
+
+#[cfg(target_os = "linux")]
+pub use sys::Platform;
 
 #[cfg(target_env = "sgx")]
 #[path = "sgx.rs"]
