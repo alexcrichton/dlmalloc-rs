@@ -30,7 +30,7 @@ mod dlmalloc;
 mod global;
 
 /// A platform interface
-#[cfg(any(target_arch = "wasm32", target_env = "sgx"))]
+#[cfg(target_env = "sgx")]
 pub trait System: Send {
     /// Allocates a memory region of `size` bytes
     unsafe fn alloc(size: usize) -> (*mut u8, usize, u32) {
@@ -79,12 +79,12 @@ pub trait GlobalSystem: System {
 }
 
 /// Struct to implement the System trait
-#[cfg(any(target_arch = "wasm32", target_env = "sgx"))]
+#[cfg(target_env = "sgx")]
 pub struct Platform;
-#[cfg(any(target_arch = "wasm32", target_env = "sgx"))]
+#[cfg(target_env = "sgx")]
 impl System for Platform {}
 #[cfg(feature = "global")]
-#[cfg(any(target_arch = "wasm32", target_env = "sgx"))]
+#[cfg(target_env = "sgx")]
 impl GlobalSystem for Platform {
     fn acquire_global_lock() {
         sys::acquire_global_lock()
@@ -95,7 +95,7 @@ impl GlobalSystem for Platform {
     }
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_env = "sgx")))]
+#[cfg(not(target_env = "sgx"))]
 /// A platform interface
 pub trait System {
     /// Allocates a memory region of `size` bytes
@@ -133,6 +133,9 @@ pub const DLMALLOC_INIT: Dlmalloc<Platform> = Dlmalloc::new();
 #[cfg(target_arch = "wasm32")]
 #[path = "wasm.rs"]
 mod sys;
+
+#[cfg(target_arch = "wasm32")]
+pub use sys::Platform;
 
 #[cfg(target_os = "macos")]
 #[path = "macos.rs"]
