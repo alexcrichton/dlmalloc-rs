@@ -20,8 +20,7 @@
 use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
-#[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
-use sys::Platform;
+use sys::System;
 
 #[cfg(all(feature = "global", not(test)))]
 pub use self::global::GlobalDlmalloc;
@@ -30,38 +29,43 @@ mod dlmalloc;
 #[cfg(all(feature = "global", not(test)))]
 mod global;
 
-/// A platform interface
-pub trait System: Send {
-    /// Allocates a memory region of `size` bytes
-    unsafe fn alloc(size: usize) -> (*mut u8, usize, u32);
+/// In order for this crate to efficiently manage memory, it needs a way to communicate with the
+/// underlying platform. This `Allocator` trait provides an interface for this communication.
+pub unsafe trait Allocator: Send {
+    /// Allocates system memory region of at least `size` bytes
+    /// Returns a triple of `(base, size, flags)` where `base` is a pointer to the beginning of the
+    /// allocated memory region. `size` is the actual size of the region while `flags` specifies
+    /// properties of the allocated region. If `EXTERN_BIT` (bit 0) set in flags, then we did not
+    /// allocate this segment and so should not try to deallocate or merge with others.
+    /// This function can return a `std::ptr::null_mut()` when allocation fails (other values of
+    /// the triple will be ignored).
+    fn alloc(&self, size: usize) -> (*mut u8, usize, u32);
 
-    /// Remaps a memory region
-    unsafe fn remap(ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8;
+    /// Remaps system memory region at `ptr` with size `oldsize` to a potential new location with
+    /// size `newsize`. `can_move` indicates if the location is allowed to move to a completely new
+    /// location, or that it is only allowed to change in size. Returns a pointer to the new
+    /// location in memory.
+    /// This function can return a `std::ptr::null_mut()` to signal an error.
+    fn remap(&self, ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8;
 
-    /// Frees a part of a memory region
-    unsafe fn free_part(ptr: *mut u8, oldsize: usize, newsize: usize) -> bool;
+    /// Frees a part of a memory chunk. The original memory chunk starts at `ptr` with size `oldsize`
+    /// and is turned into a memory region starting at the same address but with `newsize` bytes.
+    /// Returns `true` iff the access memory region could be freed.
+    fn free_part(&self, ptr: *mut u8, oldsize: usize, newsize: usize) -> bool;
 
-    /// Frees an entire memory region
-    unsafe fn free(ptr: *mut u8, size: usize) -> bool;
+    /// Frees an entire memory region. Returns `true` iff the operation succeeded. When `false` is
+    /// returned, the `dlmalloc` may re-use the location on future allocation requests
+    fn free(&self, ptr: *mut u8, size: usize) -> bool;
 
-    /// Indicates if the platform can release a part of memory
-    fn can_release_part(flags: u32) -> bool;
+    /// Indicates if the system can release a part of memory. For the `flags` argument, see
+    /// `Allocator::alloc`
+    fn can_release_part(&self, flags: u32) -> bool;
 
-    /// Allocates a memory region of zeros
-    fn allocates_zeros() -> bool;
+    /// Indicates whether newly allocated regions contain zeros.
+    fn allocates_zeros(&self) -> bool;
 
-    /// Returns the page size
-    fn page_size() -> usize;
-}
-
-/// A platform interface for platforms that support the global lock
-#[cfg(feature = "global")]
-pub trait GlobalSystem: System {
-    /// Acquires the global lock
-    fn acquire_global_lock();
-
-    /// Releases the global lock
-    fn release_global_lock();
+    /// Returns the page size. Must be a power of two
+    fn page_size(&self) -> usize;
 }
 
 /// An allocator instance
@@ -69,20 +73,7 @@ pub trait GlobalSystem: System {
 /// Instances of this type are used to allocate blocks of memory. For best
 /// results only use one of these. Currently doesn't implement `Drop` to release
 /// lingering memory back to the OS. That may happen eventually though!
-#[cfg(any(target_os = "linux", target_arch = "wasm32", target_os = "macos"))]
-pub struct Dlmalloc<S = Platform>(dlmalloc::Dlmalloc<S>);
-
-/// An allocator instance
-///
-/// Instances of this type are used to allocate blocks of memory. For best
-/// results only use one of these. Currently doesn't implement `Drop` to release
-/// lingering memory back to the OS. That may happen eventually though!
-#[cfg(not(any(target_os = "linux", target_arch = "wasm32", target_os = "macos")))]
-pub struct Dlmalloc<S>(dlmalloc::Dlmalloc<S>);
-
-/// Constant initializer for `Dlmalloc` structure.
-#[cfg(any(target_os = "linux", target_os = "macos", target_arch = "wasm32"))]
-pub const DLMALLOC_INIT: Dlmalloc<Platform> = Dlmalloc::new();
+pub struct Dlmalloc<A = System>(dlmalloc::Dlmalloc<A>);
 
 #[cfg(target_arch = "wasm32")]
 #[path = "wasm.rs"]
@@ -96,14 +87,25 @@ mod sys;
 #[path = "linux.rs"]
 mod sys;
 
-impl<S> Dlmalloc<S> {
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_arch = "wasm32")))]
+#[path = "dummy.rs"]
+mod sys;
+
+impl Dlmalloc<System> {
     /// Creates a new instance of an allocator
-    pub const fn new() -> Dlmalloc<S> {
-        Dlmalloc(dlmalloc::Dlmalloc::init())
+    pub const fn new() -> Dlmalloc<System> {
+        Dlmalloc(dlmalloc::Dlmalloc::new(System::new()))
     }
 }
 
-impl<S: System> Dlmalloc<S> {
+impl<A> Dlmalloc<A> {
+    /// Creates a new instance of an allocator
+    pub const fn new_with_allocator(sys_allocator: A) -> Dlmalloc<A> {
+        Dlmalloc(dlmalloc::Dlmalloc::new(sys_allocator))
+    }
+}
+
+impl<A: Allocator> Dlmalloc<A> {
     /// Allocates `size` bytes with `align` align.
     ///
     /// Returns a null pointer if allocation fails. Returns a valid pointer

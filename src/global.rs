@@ -1,11 +1,9 @@
-use crate::{GlobalSystem, Platform};
 #[cfg(feature = "allocator-api")]
 use core::alloc::{AllocErr, AllocRef};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 #[cfg(feature = "allocator-api")]
 use core::ptr::NonNull;
-use DLMALLOC_INIT;
 
 use Dlmalloc;
 
@@ -55,12 +53,12 @@ unsafe impl AllocRef for GlobalDlmalloc {
     }
 }
 
-static mut DLMALLOC: Dlmalloc = DLMALLOC_INIT;
+static mut DLMALLOC: Dlmalloc = Dlmalloc::new();
 
 struct Instance;
 
 unsafe fn get() -> Instance {
-    Platform::acquire_global_lock();
+    ::sys::acquire_global_lock();
     Instance
 }
 
@@ -79,6 +77,6 @@ impl DerefMut for Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
-        Platform::release_global_lock()
+        ::sys::release_global_lock()
     }
 }
