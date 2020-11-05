@@ -11,22 +11,19 @@
 //! Support for other platforms is largely untested and unused, but is used when
 //! testing this crate.
 
-#![cfg_attr(feature = "allocator-api", feature(allocator_api))]
-#![cfg_attr(not(feature = "allocator-api"), allow(dead_code))]
+#![allow(dead_code)]
 #![no_std]
 #![deny(missing_docs)]
 
-#[cfg(feature = "allocator-api")]
-use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
 use sys::System;
 
-#[cfg(all(feature = "global", not(test)))]
+#[cfg(feature = "global")]
 pub use self::global::GlobalDlmalloc;
 
 mod dlmalloc;
-#[cfg(all(feature = "global", not(test)))]
+#[cfg(feature = "global")]
 mod global;
 
 /// In order for this crate to efficiently manage memory, it needs a way to communicate with the
@@ -171,32 +168,6 @@ impl<A: Allocator> Dlmalloc<A> {
                 self.free(ptr, old_size, old_align);
             }
             res
-        }
-    }
-}
-
-#[cfg(feature = "allocator-api")]
-unsafe impl AllocRef for Dlmalloc {
-    #[inline]
-    fn alloc(&mut self, layout: Layout) -> Result<ptr::NonNull<[u8]>, AllocErr> {
-        unsafe {
-            let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
-            let ptr = ptr::slice_from_raw_parts(ptr, layout.size());
-            ptr::NonNull::new(ptr as _).ok_or(AllocErr)
-        }
-    }
-
-    #[inline]
-    unsafe fn dealloc(&mut self, ptr: ptr::NonNull<u8>, layout: Layout) {
-        <Dlmalloc>::free(self, ptr.as_ptr(), layout.size(), layout.align())
-    }
-
-    #[inline]
-    fn alloc_zeroed(&mut self, layout: Layout) -> Result<ptr::NonNull<[u8]>, AllocErr> {
-        unsafe {
-            let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
-            let ptr = ptr::slice_from_raw_parts(ptr, layout.size());
-            ptr::NonNull::new(ptr as _).ok_or(AllocErr)
         }
     }
 }

@@ -1,9 +1,5 @@
-#[cfg(feature = "allocator-api")]
-use core::alloc::{AllocErr, AllocRef};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
-#[cfg(feature = "allocator-api")]
-use core::ptr::NonNull;
 
 use Dlmalloc;
 
@@ -32,24 +28,6 @@ unsafe impl GlobalAlloc for GlobalDlmalloc {
     #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         <Dlmalloc>::realloc(&mut get(), ptr, layout.size(), layout.align(), new_size)
-    }
-}
-
-#[cfg(feature = "allocator-api")]
-unsafe impl AllocRef for GlobalDlmalloc {
-    #[inline]
-    fn alloc(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocErr> {
-        unsafe { get().alloc(layout) }
-    }
-
-    #[inline]
-    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        get().dealloc(ptr, layout)
-    }
-
-    #[inline]
-    fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocErr> {
-        unsafe { get().alloc_zeroed(layout) }
     }
 }
 

@@ -40,6 +40,4 @@ global = []
 # Enable very expensive debug checks in this crate
 debug = []
 
-# Enable experimental support for the standard library's unstable allocator API.
-allocator-api = []
 rustc-dep-of-std = ['core', 'compiler_builtins/rustc-dep-of-std']
