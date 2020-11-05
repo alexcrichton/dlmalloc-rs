@@ -18,7 +18,7 @@
 #![deny(missing_docs)]
 
 #[cfg(feature = "allocator-api")]
-use core::alloc::{Alloc, AllocErr, Layout};
+use core::alloc::{AllocErr, AllocRef, Layout};
 use core::cmp;
 use core::ptr;
 
@@ -131,11 +131,14 @@ impl Dlmalloc {
 }
 
 #[cfg(feature = "allocator-api")]
-unsafe impl Alloc for Dlmalloc {
+unsafe impl AllocRef for Dlmalloc {
     #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
-        let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
-        ptr::NonNull::new(ptr).ok_or(AllocErr)
+    fn alloc(&mut self, layout: Layout) -> Result<ptr::NonNull<[u8]>, AllocErr> {
+        unsafe {
+            let ptr = <Dlmalloc>::malloc(self, layout.size(), layout.align());
+            let ptr = ptr::slice_from_raw_parts(ptr, layout.size());
+            ptr::NonNull::new(ptr as _).ok_or(AllocErr)
+        }
     }
 
     #[inline]
@@ -144,19 +147,11 @@ unsafe impl Alloc for Dlmalloc {
     }
 
     #[inline]
-    unsafe fn realloc(
-        &mut self,
-        ptr: ptr::NonNull<u8>,
-        layout: Layout,
-        new_size: usize,
-    ) -> Result<ptr::NonNull<u8>, AllocErr> {
-        let ptr = <Dlmalloc>::realloc(self, ptr.as_ptr(), layout.size(), layout.align(), new_size);
-        ptr::NonNull::new(ptr).ok_or(AllocErr)
-    }
-
-    #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocErr> {
-        let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
-        ptr::NonNull::new(ptr).ok_or(AllocErr)
+    fn alloc_zeroed(&mut self, layout: Layout) -> Result<ptr::NonNull<[u8]>, AllocErr> {
+        unsafe {
+            let ptr = <Dlmalloc>::calloc(self, layout.size(), layout.align());
+            let ptr = ptr::slice_from_raw_parts(ptr, layout.size());
+            ptr::NonNull::new(ptr as _).ok_or(AllocErr)
+        }
     }
 }
