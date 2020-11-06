@@ -1,9 +1,5 @@
-#[cfg(feature = "allocator-api")]
-use core::alloc::{Alloc, AllocErr};
 use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
-#[cfg(feature = "allocator-api")]
-use core::ptr::NonNull;
 
 use Dlmalloc;
 
@@ -35,35 +31,7 @@ unsafe impl GlobalAlloc for GlobalDlmalloc {
     }
 }
 
-#[cfg(feature = "allocator-api")]
-unsafe impl Alloc for GlobalDlmalloc {
-    #[inline]
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
-        get().alloc(layout)
-    }
-
-    #[inline]
-    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        get().dealloc(ptr, layout)
-    }
-
-    #[inline]
-    unsafe fn realloc(
-        &mut self,
-        ptr: NonNull<u8>,
-        layout: Layout,
-        new_size: usize,
-    ) -> Result<NonNull<u8>, AllocErr> {
-        Alloc::realloc(&mut *get(), ptr, layout, new_size)
-    }
-
-    #[inline]
-    unsafe fn alloc_zeroed(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
-        get().alloc_zeroed(layout)
-    }
-}
-
-static mut DLMALLOC: Dlmalloc = Dlmalloc(::dlmalloc::DLMALLOC_INIT);
+static mut DLMALLOC: Dlmalloc = Dlmalloc::new();
 
 struct Instance;
 

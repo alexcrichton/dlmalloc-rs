@@ -1,12 +1,10 @@
-#![cfg(all(feature = "allocator-api", feature = "global"))]
-#![feature(global_allocator)]
-
 extern crate dlmalloc;
 
 use std::collections::HashMap;
 use std::thread;
 
 #[global_allocator]
+#[cfg(feature = "global")]
 static A: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
 #[test]
