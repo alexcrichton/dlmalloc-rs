@@ -38,3 +38,12 @@ jobs:
       run: rustup update stable && rustup default stable && rustup target add wasm32-unknown-unknown
     - run: cargo build --target wasm32-unknown-unknown
     - run: cargo build --target wasm32-unknown-unknown --release
+
+  external-platform:
+    name: external-platform
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Install Rust
+      run: rustup update stable && rustup default stable && rustup target add x86_64-fortanix-unknown-sgx
+    - run: cargo build --target x86_64-fortanix-unknown-sgx
