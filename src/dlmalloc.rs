@@ -193,11 +193,15 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     fn align_offset(&self, addr: *mut u8) -> usize {
-        align_up(addr as usize, self.malloc_alignment()) - (addr as usize)
+        self.align_offset_usize(addr as usize)
+    }
+
+    fn align_offset_usize(&self, addr: usize) -> usize {
+        align_up(addr, self.malloc_alignment()) - (addr as usize)
     }
 
     fn top_foot_size(&self) -> usize {
-        self.align_offset(unsafe { Chunk::to_mem(ptr::null_mut()) })
+        self.align_offset_usize(Chunk::mem_offset() as usize)
             + self.pad_request(mem::size_of::<Segment>())
             + self.min_chunk_size()
     }
@@ -1723,7 +1727,11 @@ impl Chunk {
     }
 
     unsafe fn to_mem(me: *mut Chunk) -> *mut u8 {
-        (me as *mut u8).offset(2 * (mem::size_of::<usize>() as isize))
+        (me as *mut u8).offset(Chunk::mem_offset())
+    }
+
+    fn mem_offset() -> isize {
+        2 * (mem::size_of::<usize>() as isize)
     }
 
     unsafe fn from_mem(mem: *mut u8) -> *mut Chunk {
