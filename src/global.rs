@@ -9,6 +9,27 @@ use Dlmalloc;
 /// implements the `GlobalAlloc` trait in the standard library.
 pub struct GlobalDlmalloc;
 
+impl GlobalDlmalloc {
+    /// Lock the global allocator.
+    ///
+    /// Any attempt to allocate using this allocator will block the calling thread,
+    /// until the allocator is unlocked.
+    #[inline]
+    pub fn lock(&self) {
+        ::sys::acquire_global_lock()
+    }
+
+    ///  Unlock the global allocator.
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the allocator is currently locked.
+    #[inline]
+    pub unsafe fn unlock(&self) {
+        ::sys::release_global_lock()
+    }
+}
+
 unsafe impl GlobalAlloc for GlobalDlmalloc {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
