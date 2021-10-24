@@ -63,7 +63,24 @@ unsafe impl Allocator for System {
 
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
-    unsafe { assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0) }
+    fn _acquire_global_lock() {
+        unsafe { assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0) }
+    }
+
+    #[cfg(feature = "fork-safe")]
+    unsafe {
+        static EXEC_ONCE: once_cell::sync::OnceCell();
+
+        EXEC_ONCE.get_or_init(|| {
+            libc::pthread_atfork(
+                _acquire_global_lock,
+                release_global_lock,
+                release_global_lock,
+            )
+        });
+    }
+
+    _acquire_global_lock();
 }
 
 #[cfg(feature = "global")]
