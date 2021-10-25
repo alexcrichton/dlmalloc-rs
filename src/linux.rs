@@ -75,24 +75,31 @@ unsafe impl Allocator for System {
 
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
-    fn _acquire_global_lock() {
-        unsafe { assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0) }
-    }
+    static mut FORK_PROTECTED: bool = false;
 
-    #[cfg(feature = "fork-safe")]
     unsafe {
-        static EXEC_ONCE: once_cell::sync::OnceCell();
-
-        EXEC_ONCE.get_or_init(|| {
+        assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0);
+        if !FORK_PROTECTED {
+            // ensures that if a process forks,
+            // it will acquire the lock before any other thread,
+            // protecting it from deadlock,
+            // when the child is created with only that thread.
             libc::pthread_atfork(
-                _acquire_global_lock,
-                release_global_lock,
-                release_global_lock,
-            )
-        });
+                Some(_acquire_global_lock),
+                Some(_release_global_lock),
+                Some(_release_global_lock),
+            );
+            FORK_PROTECTED = true;
+        }
     }
 
-    _acquire_global_lock();
+    unsafe extern "C" fn _acquire_global_lock() {
+        assert_eq!(libc::pthread_mutex_lock(&mut LOCK), 0)
+    }
+
+    unsafe extern "C" fn _release_global_lock() {
+        release_global_lock()
+    }
 }
 
 #[cfg(feature = "global")]
