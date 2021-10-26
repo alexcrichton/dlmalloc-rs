@@ -62,3 +62,8 @@ pub fn acquire_global_lock() {
 pub fn release_global_lock() {
     // single threaded, no need!
 }
+
+#[cfg(feature = "global")]
+pub unsafe fn enable_alloc_after_fork() {
+    // single threaded, no need!
+}

@@ -82,3 +82,40 @@ pub fn acquire_global_lock() {
 pub fn release_global_lock() {
     unsafe { assert_eq!(libc::pthread_mutex_unlock(&mut LOCK), 0) }
 }
+
+#[cfg(feature = "global")]
+/// allows the allocator to remain unsable in the child process,
+/// after a call to `fork(2)`
+///
+/// #Safety
+///
+/// if used, this function must be called,
+/// before any allocations are made with the global allocator.
+pub unsafe fn enable_alloc_after_fork() {
+    // atfork must only be called once, to avoid a deadlock,
+    // where the handler attempts to acquire the global lock twice
+    static mut FORK_PROTECTED: bool = false;
+
+    unsafe extern "C" fn _acquire_global_lock() {
+        acquire_global_lock()
+    }
+
+    unsafe extern "C" fn _release_global_lock() {
+        release_global_lock()
+    }
+
+    acquire_global_lock();
+    // if a process forks,
+    // it will acquire the lock before any other thread,
+    // protecting it from deadlock,
+    // due to the child being created with only the calling thread.
+    if !FORK_PROTECTED {
+        libc::pthread_atfork(
+            Some(_acquire_global_lock),
+            Some(_release_global_lock),
+            Some(_release_global_lock),
+        );
+        FORK_PROTECTED = true;
+    }
+    release_global_lock();
+}
