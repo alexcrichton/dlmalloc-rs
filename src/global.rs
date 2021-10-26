@@ -3,6 +3,8 @@ use core::ops::{Deref, DerefMut};
 
 use Dlmalloc;
 
+pub use sys::enable_alloc_after_fork;
+
 /// An instance of a "global allocator" backed by `Dlmalloc`
 ///
 /// This API requires the `global` feature is activated, and this type
