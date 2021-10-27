@@ -3,7 +3,7 @@ extern crate libc;
 use core::ptr;
 use Allocator;
 
-/// System setting for MacOS
+/// System setting for Linux
 pub struct System {
     _priv: (),
 }
@@ -36,10 +36,34 @@ unsafe impl Allocator for System {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    fn remap(&self, ptr: *mut u8, oldsize: usize, newsize: usize, can_move: bool) -> *mut u8 {
+        let flags = if can_move { libc::MREMAP_MAYMOVE } else { 0 };
+        let ptr = unsafe { libc::mremap(ptr as *mut _, oldsize, newsize, flags) };
+        if ptr == libc::MAP_FAILED {
+            ptr::null_mut()
+        } else {
+            ptr as *mut u8
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn remap(&self, _ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
         ptr::null_mut()
     }
 
+    #[cfg(target_os = "linux")]
+    fn free_part(&self, ptr: *mut u8, oldsize: usize, newsize: usize) -> bool {
+        unsafe {
+            let rc = libc::mremap(ptr as *mut _, oldsize, newsize, 0);
+            if rc != libc::MAP_FAILED {
+                return true;
+            }
+            libc::munmap(ptr.offset(newsize as isize) as *mut _, oldsize - newsize) == 0
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn free_part(&self, ptr: *mut u8, oldsize: usize, newsize: usize) -> bool {
         unsafe { libc::munmap(ptr.offset(newsize as isize) as *mut _, oldsize - newsize) == 0 }
     }

@@ -76,12 +76,8 @@ pub struct Dlmalloc<A = System>(dlmalloc::Dlmalloc<A>);
 #[path = "wasm.rs"]
 mod sys;
 
-#[cfg(target_os = "macos")]
-#[path = "macos.rs"]
-mod sys;
-
-#[cfg(target_os = "linux")]
-#[path = "linux.rs"]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "unix.rs"]
 mod sys;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_arch = "wasm32")))]
