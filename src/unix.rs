@@ -1,6 +1,7 @@
 extern crate libc;
 
 use core::ptr;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use Allocator;
 
 /// System setting for Linux
@@ -96,17 +97,25 @@ pub fn release_global_lock() {
 }
 
 #[cfg(feature = "global")]
-/// allows the allocator to remain unsable in the child process,
+/// allows the allocator to remain usable in the child process,
 /// after a call to `fork(2)`
+///
+/// returns `true` if the function completed sucessfully,
+/// which guarantees the allocator is safe to use after fork.
+/// returns `false` if the function has started in a seperate thread,
+/// and hasn't finished yet.
 ///
 /// #Safety
 ///
-/// if used, this function must be called,
-/// before any allocations are made with the global allocator.
-pub unsafe fn enable_alloc_after_fork() {
+/// if used, this function must be called and return `true`,
+/// before the call to `fork` is made.
+pub unsafe fn enable_alloc_after_fork() -> bool {
+    const NOT_STARTED: usize = 0;
+    const IN_PROGRESS: usize = 1;
+    const DONE: usize = 2;
     // atfork must only be called once, to avoid a deadlock,
     // where the handler attempts to acquire the global lock twice
-    static mut FORK_PROTECTED: bool = false;
+    static FORK_PROTECTION: AtomicUsize = AtomicUsize::new(NOT_STARTED);
 
     unsafe extern "C" fn _acquire_global_lock() {
         acquire_global_lock()
@@ -116,18 +125,26 @@ pub unsafe fn enable_alloc_after_fork() {
         release_global_lock()
     }
 
-    acquire_global_lock();
     // if a process forks,
     // it will acquire the lock before any other thread,
     // protecting it from deadlock,
     // due to the child being created with only the calling thread.
-    if !FORK_PROTECTED {
-        libc::pthread_atfork(
-            Some(_acquire_global_lock),
-            Some(_release_global_lock),
-            Some(_release_global_lock),
-        );
-        FORK_PROTECTED = true;
+    match FORK_PROTECTION.compare_exchange(
+        NOT_STARTED,
+        IN_PROGRESS,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(_) => {
+            libc::pthread_atfork(
+                Some(_acquire_global_lock),
+                Some(_release_global_lock),
+                Some(_release_global_lock),
+            );
+            FORK_PROTECTION.store(DONE, Ordering::SeqCst);
+            true
+        }
+        Err(DONE) => true,
+        Err(_) => false,
     }
-    release_global_lock();
 }
