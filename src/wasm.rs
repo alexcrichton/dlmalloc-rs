@@ -1,4 +1,7 @@
-use core::arch::wasm32;
+#[cfg(target_arch = "wasm32")]
+use core::arch::wasm32 as wasm;
+#[cfg(target_arch = "wasm64")]
+use core::arch::wasm64 as wasm;
 use core::ptr;
 use Allocator;
 
@@ -16,7 +19,7 @@ impl System {
 unsafe impl Allocator for System {
     fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
         let pages = size / self.page_size();
-        let prev = wasm32::memory_grow(0, pages);
+        let prev = wasm::memory_grow(0, pages);
         if prev == usize::max_value() {
             return (ptr::null_mut(), 0, 0);
         }
