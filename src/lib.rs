@@ -14,6 +14,7 @@
 #![allow(dead_code)]
 #![no_std]
 #![deny(missing_docs)]
+#![cfg_attr(target_arch = "wasm64", feature(simd_wasm64))]
 
 use core::cmp;
 use core::ptr;
