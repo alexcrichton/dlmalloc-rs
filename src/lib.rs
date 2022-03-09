@@ -17,6 +17,7 @@
 #![cfg_attr(target_arch = "wasm64", feature(simd_wasm64))]
 #[macro_use]
 extern crate once_cell;
+#[cfg(target_os = "windows")]
 extern crate windows;
 
 use core::cmp;
