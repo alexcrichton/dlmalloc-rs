@@ -88,9 +88,9 @@ mod sys;
 #[path = "windows.rs"]
 mod sys;
 
-// #[cfg(not(any(target_os = "linux", target_os = "macos", target_family = "wasm")))]
-// #[path = "dummy.rs"]
-// mod sys;
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_family = "wasm")))]
+#[path = "dummy.rs"]
+mod sys;
 
 impl Dlmalloc<System> {
     /// Creates a new instance of an allocator
