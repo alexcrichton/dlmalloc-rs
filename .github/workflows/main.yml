@@ -20,6 +20,22 @@ jobs:
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release --features debug
 
+  windows-test:
+    name: Test-windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+    steps:
+      - uses: actions/checkout@master
+      - name: Install Rust (
+        run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: cargo test
+      - run: cargo test --features debug
+      - run: cargo test --features global
+      - run: cargo test --release
+      - run: cargo test --features debug --release
+
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest

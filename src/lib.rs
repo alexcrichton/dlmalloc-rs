@@ -15,6 +15,9 @@
 #![no_std]
 #![deny(missing_docs)]
 #![cfg_attr(target_arch = "wasm64", feature(simd_wasm64))]
+#[macro_use]
+extern crate once_cell;
+extern crate windows;
 
 use core::cmp;
 use core::ptr;
@@ -81,9 +84,13 @@ mod sys;
 #[path = "unix.rs"]
 mod sys;
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_family = "wasm")))]
-#[path = "dummy.rs"]
+#[cfg(target_os = "windows")]
+#[path = "windows.rs"]
 mod sys;
+
+// #[cfg(not(any(target_os = "linux", target_os = "macos", target_family = "wasm")))]
+// #[path = "dummy.rs"]
+// mod sys;
 
 impl Dlmalloc<System> {
     /// Creates a new instance of an allocator
