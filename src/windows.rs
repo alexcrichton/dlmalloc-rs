@@ -1,6 +1,5 @@
 use core::ptr;
 use core::ffi::{c_void};
-use once_cell::sync::Lazy;
 use Allocator;
 
 pub struct System {
@@ -53,23 +52,21 @@ unsafe impl Allocator for System {
 }
 
 #[cfg(feature = "global")]
-static LOCK: Lazy<windows::Win32::Foundation::HANDLE> = unsafe {
-    Lazy::new(|| {
+static mut LOCK: windows::Win32::Foundation::HANDLE = unsafe {
         windows::Win32::System::Threading::CreateMutexA(
             ptr::null_mut(),
             false,
             windows::core::PCSTR::default())
-    })
 };
 
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
-    unsafe { assert_ne!(windows::Win32::System::Threading::WaitForSingleObject(*LOCK, u32::MAX), u32::MAX) };
+    unsafe { assert_ne!(windows::Win32::System::Threading::WaitForSingleObject(LOCK, u32::MAX), u32::MAX) };
 }
 
 #[cfg(feature = "global")]
 pub fn release_global_lock() {
-    unsafe { assert_ne!(windows::Win32::System::Threading::ReleaseMutex(*LOCK).0, 0) };
+    unsafe { assert_ne!(windows::Win32::System::Threading::ReleaseMutex(LOCK).0, 0) };
 }
 
 /// Under consideration
