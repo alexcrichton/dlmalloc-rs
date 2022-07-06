@@ -29,6 +29,11 @@ mod sys {
                 inlateout("a0") a0,
                 inlateout("a1") a1,
                 inlateout("a2") a2,
+                out("a3") _,
+                out("a4") _,
+                out("a5") _,
+                out("a6") _,
+                out("a7") _,
             )
         };
 
