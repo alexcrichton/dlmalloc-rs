@@ -1,7 +1,7 @@
 //! A Rust port of the `dlmalloc` allocator.
 //!
 //! The `dlmalloc` allocator is described at
-//! http://g.oswego.edu/dl/html/malloc.html and this Rust crate is a straight
+//! <https://gee.cs.oswego.edu/dl/html/malloc.html> and this Rust crate is a straight
 //! port of the C code for the allocator into Rust. The implementation is
 //! wrapped up in a `Dlmalloc` type and has support for Linux, OSX, and Wasm
 //! currently.
