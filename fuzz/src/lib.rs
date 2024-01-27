@@ -2,9 +2,12 @@ use arbitrary::{Result, Unstructured};
 use dlmalloc::Dlmalloc;
 use std::cmp;
 
+const MAX_ALLOCATION: usize = 100 << 20; // 100 MB
+
 pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
     let mut a = Dlmalloc::new();
     let mut ptrs = Vec::new();
+    let mut allocated = 0;
     unsafe {
         while u.arbitrary()? {
             let free =
@@ -12,6 +15,7 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
             if free {
                 let idx = u.choose_index(ptrs.len())?;
                 let (ptr, size, align) = ptrs.swap_remove(idx);
+                allocated -= size;
                 a.free(ptr, size, align);
                 continue;
             }
@@ -48,6 +52,11 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
             } else {
                 8
             };
+
+            if size + allocated > MAX_ALLOCATION {
+                continue;
+            }
+            allocated += size;
 
             let zero = u.ratio(1, 50)?;
             let ptr = if zero {
