@@ -91,22 +91,22 @@ impl<A> Dlmalloc<A> {
         Dlmalloc {
             smallmap: 0,
             treemap: 0,
-            smallbins: [0 as *mut _; (NSMALLBINS + 1) * 2],
-            treebins: [0 as *mut _; NTREEBINS],
+            smallbins: [ptr::null_mut(); (NSMALLBINS + 1) * 2],
+            treebins: [ptr::null_mut(); NTREEBINS],
             dvsize: 0,
             topsize: 0,
-            dv: 0 as *mut _,
-            top: 0 as *mut _,
+            dv: ptr::null_mut(),
+            top: ptr::null_mut(),
             footprint: 0,
             max_footprint: 0,
             seg: Segment {
-                base: 0 as *mut _,
+                base: ptr::null_mut(),
                 size: 0,
-                next: 0 as *mut _,
+                next: ptr::null_mut(),
                 flags: 0,
             },
             trim_check: 0,
-            least_addr: 0 as *mut _,
+            least_addr: ptr::null_mut(),
             release_checks: 0,
             system_allocator,
         }
@@ -201,7 +201,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     fn top_foot_size(&self) -> usize {
-        self.align_offset_usize(Chunk::mem_offset() as usize)
+        self.align_offset_usize(Chunk::mem_offset())
             + self.pad_request(mem::size_of::<Segment>())
             + self.min_chunk_size()
     }
@@ -799,7 +799,7 @@ impl<A: Allocator> Dlmalloc<A> {
             let nextp = Chunk::plus_offset(p, mem::size_of::<usize>());
             (*p).head = Chunk::fencepost_head();
             nfences += 1;
-            if (&(*nextp).head as *const usize as *mut u8) < old_end {
+            if ptr::addr_of!((*nextp).head).cast::<u8>() < old_end {
                 p = nextp;
             } else {
                 break;
@@ -940,13 +940,15 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn smallbin_at(&mut self, idx: u32) -> *mut Chunk {
-        debug_assert!(((idx * 2) as usize) < self.smallbins.len());
-        &mut *self.smallbins.get_unchecked_mut((idx as usize) * 2) as *mut *mut Chunk as *mut Chunk
+        let idx = usize::try_from(idx * 2).unwrap();
+        debug_assert!(idx < self.smallbins.len());
+        self.smallbins.as_mut_ptr().add(idx).cast()
     }
 
     unsafe fn treebin_at(&mut self, idx: u32) -> *mut *mut TreeChunk {
-        debug_assert!((idx as usize) < self.treebins.len());
-        &mut *self.treebins.get_unchecked_mut(idx as usize)
+        let idx = usize::try_from(idx).unwrap();
+        debug_assert!(idx < self.treebins.len());
+        self.treebins.as_mut_ptr().add(idx)
     }
 
     fn compute_tree_index(&self, size: usize) -> u32 {
@@ -1653,7 +1655,7 @@ impl<A: Allocator> Dlmalloc<A> {
         while !sp.is_null() {
             let base = (*sp).base;
             let size = (*sp).size;
-            let can_free = !Segment::is_extern(sp);
+            let can_free = !base.is_null() && !Segment::is_extern(sp);
             sp = (*sp).next;
 
             if can_free && self.system_allocator.free(base, size) {
@@ -1739,19 +1741,19 @@ impl Chunk {
     }
 
     unsafe fn plus_offset(me: *mut Chunk, offset: usize) -> *mut Chunk {
-        (me as *mut u8).offset(offset as isize) as *mut Chunk
+        me.cast::<u8>().add(offset).cast()
     }
 
     unsafe fn minus_offset(me: *mut Chunk, offset: usize) -> *mut Chunk {
-        (me as *mut u8).offset(-(offset as isize)) as *mut Chunk
+        me.cast::<u8>().offset(-(offset as isize)).cast()
     }
 
     unsafe fn to_mem(me: *mut Chunk) -> *mut u8 {
-        (me as *mut u8).offset(Chunk::mem_offset())
+        me.cast::<u8>().add(Chunk::mem_offset())
     }
 
-    fn mem_offset() -> isize {
-        2 * (mem::size_of::<usize>() as isize)
+    fn mem_offset() -> usize {
+        2 * mem::size_of::<usize>()
     }
 
     unsafe fn from_mem(mem: *mut u8) -> *mut Chunk {
@@ -1770,7 +1772,7 @@ impl TreeChunk {
     }
 
     unsafe fn chunk(me: *mut TreeChunk) -> *mut Chunk {
-        &mut (*me).chunk
+        ptr::addr_of_mut!((*me).chunk)
     }
 
     unsafe fn next(me: *mut TreeChunk) -> *mut TreeChunk {
@@ -1802,7 +1804,7 @@ impl Segment {
     }
 
     unsafe fn top(seg: *mut Segment) -> *mut u8 {
-        (*seg).base.offset((*seg).size as isize)
+        (*seg).base.add((*seg).size)
     }
 }
 
@@ -1837,6 +1839,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(miri))]
     // Test allocating the maximum request size with a non-empty treemap
     fn treemap_alloc_max() {
         let mut a = Dlmalloc::new(System::new());

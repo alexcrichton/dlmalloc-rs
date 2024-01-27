@@ -27,7 +27,8 @@ mod fuzz;
 fn stress() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut buf = vec![0; 4096];
-    for _ in 0..2049 {
+    let iters = if cfg!(miri) { 10 } else { 2000 };
+    for _ in 0..iters {
         rng.fill_bytes(&mut buf);
         let mut u = Unstructured::new(&buf);
         let _ = fuzz::run(&mut u);
