@@ -1,5 +1,5 @@
+use crate::Allocator;
 use core::ptr;
-use Allocator;
 
 pub struct System {
     _priv: (),
