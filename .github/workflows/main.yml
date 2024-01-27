@@ -65,9 +65,9 @@ jobs:
     - uses: actions/checkout@v4
     - name: Install Miri
       run: |
-	rustup toolchain install nightly --component miri
-	rustup override set nightly
-	cargo miri setup
+        rustup toolchain install nightly --component miri
+        rustup override set nightly
+        cargo miri setup
     - name: Test with Miri
       run: cargo miri test
       env:
