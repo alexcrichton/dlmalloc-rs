@@ -59,14 +59,17 @@ unsafe impl Allocator for System {
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }
 
 #[cfg(feature = "global")]
 pub fn release_global_lock() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }
 
 #[cfg(feature = "global")]
 pub unsafe fn enable_alloc_after_fork() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }
