@@ -1,9 +1,9 @@
+use crate::Allocator;
 #[cfg(target_arch = "wasm32")]
 use core::arch::wasm32 as wasm;
 #[cfg(target_arch = "wasm64")]
 use core::arch::wasm64 as wasm;
 use core::ptr;
-use Allocator;
 
 /// System setting for Wasm
 pub struct System {
