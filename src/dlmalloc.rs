@@ -34,6 +34,9 @@ const NTREEBINS: usize = 32;
 const SMALLBIN_SHIFT: usize = 3;
 const TREEBIN_SHIFT: usize = 8;
 
+const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
+const NTREEBINS_U32: u32 = NTREEBINS as u32;
+
 // TODO: runtime configurable? documentation?
 const DEFAULT_GRANULARITY: usize = 64 * 1024;
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
@@ -78,7 +81,7 @@ fn least_bit(x: u32) -> u32 {
 }
 
 fn leftshift_for_tree_index(x: u32) -> u32 {
-    let x = x as usize;
+    let x = usize::try_from(x).unwrap();
     if x == NTREEBINS - 1 {
         0
     } else {
@@ -181,7 +184,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     fn small_index2size(&self, idx: u32) -> usize {
-        (idx as usize) << SMALLBIN_SHIFT
+        usize::try_from(idx).unwrap() << SMALLBIN_SHIFT
     }
 
     fn is_small(&self, s: usize) -> bool {
@@ -193,11 +196,11 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     fn align_offset(&self, addr: *mut u8) -> usize {
-        self.align_offset_usize(addr as usize)
+        addr.align_offset(self.malloc_alignment())
     }
 
     fn align_offset_usize(&self, addr: usize) -> usize {
-        align_up(addr, self.malloc_alignment()) - (addr as usize)
+        align_up(addr, self.malloc_alignment()) - addr
     }
 
     fn top_foot_size(&self) -> usize {
@@ -212,8 +215,8 @@ impl<A: Allocator> Dlmalloc<A> {
 
     fn align_as_chunk(&self, ptr: *mut u8) -> *mut Chunk {
         unsafe {
-            let chunk = Chunk::to_mem(ptr as *mut Chunk);
-            ptr.offset(self.align_offset(chunk) as isize) as *mut Chunk
+            let chunk = Chunk::to_mem(ptr.cast());
+            ptr.add(self.align_offset(chunk)).cast()
         }
     }
 
@@ -380,19 +383,19 @@ impl<A: Allocator> Dlmalloc<A> {
             self.release_checks = MAX_RELEASE_CHECK_RATE;
             self.init_bins();
             let tsize = tsize - self.top_foot_size();
-            self.init_top(tbase as *mut Chunk, tsize);
+            self.init_top(tbase.cast(), tsize);
         // let mn = Chunk::next(Chunk::from_mem(self as *mut _ as *mut u8));
         // let top_foot_size = self.top_foot_size();
         // self.init_top(mn, tbase as usize + tsize - mn as usize - top_foot_size);
         } else {
-            let mut sp = &mut self.seg as *mut Segment;
+            let mut sp: *mut Segment = &mut self.seg;
             while !sp.is_null() && tbase != Segment::top(sp) {
                 sp = (*sp).next;
             }
             if !sp.is_null()
                 && !Segment::is_extern(sp)
                 && Segment::sys_flags(sp) == flags
-                && Segment::holds(sp, self.top as *mut u8)
+                && Segment::holds(sp, self.top.cast())
             {
                 (*sp).size += tsize;
                 let ptr = self.top;
@@ -400,8 +403,8 @@ impl<A: Allocator> Dlmalloc<A> {
                 self.init_top(ptr, size);
             } else {
                 self.least_addr = cmp::min(tbase, self.least_addr);
-                let mut sp = &mut self.seg as *mut Segment;
-                while !sp.is_null() && (*sp).base != tbase.offset(tsize as isize) {
+                let mut sp: *mut Segment = &mut self.seg;
+                while !sp.is_null() && (*sp).base != tbase.add(tsize) {
                     sp = (*sp).next;
                 }
                 if !sp.is_null() && !Segment::is_extern(sp) && Segment::sys_flags(sp) == flags {
@@ -544,7 +547,7 @@ impl<A: Allocator> Dlmalloc<A> {
         let newmmsize =
             self.mmap_align(nb + 6 * mem::size_of::<usize>() + self.malloc_alignment() - 1);
         let ptr = self.system_allocator.remap(
-            (oldp as *mut u8).offset(-(offset as isize)),
+            oldp.cast::<u8>().sub(offset),
             oldmmsize,
             newmmsize,
             can_move,
@@ -552,7 +555,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if ptr.is_null() {
             return ptr::null_mut();
         }
-        let newp = ptr.offset(offset as isize) as *mut Chunk;
+        let newp = ptr.add(offset).cast::<Chunk>();
         let psize = newmmsize - offset - self.mmap_foot_pad();
         (*newp).head = psize;
         (*Chunk::plus_offset(newp, psize)).head = Chunk::fencepost_head();
@@ -593,11 +596,11 @@ impl<A: Allocator> Dlmalloc<A> {
             let br =
                 Chunk::from_mem(((mem as usize + alignment - 1) & (!alignment + 1)) as *mut u8);
             let pos = if (br as usize - p as usize) > self.min_chunk_size() {
-                br as *mut u8
+                br.cast::<u8>()
             } else {
-                (br as *mut u8).offset(alignment as isize)
+                br.cast::<u8>().add(alignment)
             };
-            let newp = pos as *mut Chunk;
+            let newp = pos.cast::<Chunk>();
             let leadsize = pos as usize - p as usize;
             let newsize = Chunk::size(p) - leadsize;
 
@@ -643,7 +646,7 @@ impl<A: Allocator> Dlmalloc<A> {
                 psize += prevsize + self.mmap_foot_pad();
                 if self
                     .system_allocator
-                    .free((p as *mut u8).offset(-(prevsize as isize)), psize)
+                    .free(p.cast::<u8>().sub(prevsize), psize)
                 {
                     self.footprint -= psize;
                 }
@@ -708,7 +711,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn init_bins(&mut self) {
-        for i in 0..NSMALLBINS as u32 {
+        for i in 0..NSMALLBINS_U32 {
             let bin = self.smallbin_at(i);
             (*bin).next = bin;
             (*bin).prev = bin;
@@ -762,28 +765,28 @@ impl<A: Allocator> Dlmalloc<A> {
         // TODO: what in the world is this function doing
 
         // Determine locations and sizes of segment, fenceposts, and the old top
-        let old_top = self.top as *mut u8;
+        let old_top = self.top.cast::<u8>();
         let oldsp = self.segment_holding(old_top);
         let old_end = Segment::top(oldsp);
         let ssize = self.pad_request(mem::size_of::<Segment>());
         let offset = ssize + mem::size_of::<usize>() * 4 + self.malloc_alignment() - 1;
-        let rawsp = old_end.offset(-(offset as isize));
-        let offset = self.align_offset(Chunk::to_mem(rawsp as *mut Chunk));
-        let asp = rawsp.offset(offset as isize);
-        let csp = if asp < old_top.offset(self.min_chunk_size() as isize) {
+        let rawsp = old_end.sub(offset);
+        let offset = self.align_offset(Chunk::to_mem(rawsp.cast()));
+        let asp = rawsp.add(offset);
+        let csp = if asp < old_top.add(self.min_chunk_size()) {
             old_top
         } else {
             asp
         };
-        let sp = csp as *mut Chunk;
-        let ss = Chunk::to_mem(sp) as *mut Segment;
+        let sp = csp.cast::<Chunk>();
+        let ss = Chunk::to_mem(sp).cast::<Segment>();
         let tnext = Chunk::plus_offset(sp, ssize);
         let mut p = tnext;
         let mut nfences = 0;
 
         // reset the top to our new space
         let size = tsize - self.top_foot_size();
-        self.init_top(tbase as *mut Chunk, size);
+        self.init_top(tbase.cast(), size);
 
         // set up our segment record
         debug_assert!(self.is_aligned(ss as usize));
@@ -809,7 +812,7 @@ impl<A: Allocator> Dlmalloc<A> {
 
         // insert the rest of the old top into a bin as an ordinary free chunk
         if csp != old_top {
-            let q = old_top as *mut Chunk;
+            let q = old_top.cast::<Chunk>();
             let psize = csp as usize - old_top as usize;
             let tn = Chunk::plus_offset(q, psize);
             Chunk::set_free_with_pinuse(q, psize, tn);
@@ -851,7 +854,7 @@ impl<A: Allocator> Dlmalloc<A> {
         }
 
         let vc = TreeChunk::chunk(v);
-        let r = Chunk::plus_offset(vc, size) as *mut TreeChunk;
+        let r = Chunk::plus_offset(vc, size).cast::<TreeChunk>();
         debug_assert_eq!(Chunk::size(vc), rsize + size);
         self.unlink_large_chunk(v);
         if rsize < self.min_chunk_size() {
@@ -956,7 +959,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if x == 0 {
             0
         } else if x > 0xffff {
-            NTREEBINS as u32 - 1
+            NTREEBINS_U32 - 1
         } else {
             let k = mem::size_of_val(&x) * 8 - 1 - (x.leading_zeros() as usize);
             ((k << 1) + (size >> (k + TREEBIN_SHIFT - 1) & 1)) as u32
@@ -991,7 +994,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if self.is_small(size) {
             self.insert_small_chunk(chunk, size);
         } else {
-            self.insert_large_chunk(chunk as *mut TreeChunk, size);
+            self.insert_large_chunk(chunk.cast(), size);
         }
     }
 
@@ -1022,7 +1025,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if !self.treemap_is_marked(idx) {
             self.mark_treemap(idx);
             *h = chunk;
-            (*chunk).parent = h as *mut TreeChunk; // TODO: dubious?
+            (*chunk).parent = h.cast(); // TODO: dubious?
             (*chunkc).next = chunkc;
             (*chunkc).prev = chunkc;
         } else {
@@ -1083,7 +1086,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if self.is_small(size) {
             self.unlink_small_chunk(chunk, size)
         } else {
-            self.unlink_large_chunk(chunk as *mut TreeChunk);
+            self.unlink_large_chunk(chunk.cast());
         }
     }
 
@@ -1178,7 +1181,7 @@ impl<A: Allocator> Dlmalloc<A> {
                 psize += prevsize + self.mmap_foot_pad();
                 if self
                     .system_allocator
-                    .free((p as *mut u8).offset(-(prevsize as isize)), psize)
+                    .free(p.cast::<u8>().sub(prevsize), psize)
                 {
                     self.footprint -= psize;
                 }
@@ -1236,7 +1239,7 @@ impl<A: Allocator> Dlmalloc<A> {
             self.insert_small_chunk(p, psize);
             self.check_free_chunk(p);
         } else {
-            self.insert_large_chunk(p as *mut TreeChunk, psize);
+            self.insert_large_chunk(p.cast(), psize);
             self.check_free_chunk(p);
             self.release_checks -= 1;
             if self.release_checks == 0 {
@@ -1256,7 +1259,7 @@ impl<A: Allocator> Dlmalloc<A> {
             if self.topsize > pad {
                 let unit = DEFAULT_GRANULARITY;
                 let extra = ((self.topsize - pad + unit - 1) / unit - 1) * unit;
-                let sp = self.segment_holding(self.top as *mut u8);
+                let sp = self.segment_holding(self.top.cast());
                 debug_assert!(!sp.is_null());
 
                 if !Segment::is_extern(sp) {
@@ -1296,7 +1299,7 @@ impl<A: Allocator> Dlmalloc<A> {
     unsafe fn has_segment_link(&self, ptr: *mut Segment) -> bool {
         let mut sp = &self.seg as *const Segment as *mut Segment;
         while !sp.is_null() {
-            if Segment::holds(ptr, sp as *mut u8) {
+            if Segment::holds(ptr, sp.cast()) {
                 return true;
             }
             sp = (*sp).next;
@@ -1308,7 +1311,7 @@ impl<A: Allocator> Dlmalloc<A> {
     unsafe fn release_unused_segments(&mut self) -> usize {
         let mut released = 0;
         let mut nsegs = 0;
-        let mut pred = &mut self.seg as *mut Segment;
+        let mut pred: *mut Segment = &mut self.seg;
         let mut sp = (*pred).next;
         while !sp.is_null() {
             let base = (*sp).base;
@@ -1321,11 +1324,11 @@ impl<A: Allocator> Dlmalloc<A> {
                 let psize = Chunk::size(p);
                 // We can unmap if the first chunk holds the entire segment and
                 // isn't pinned.
-                let chunk_top = (p as *mut u8).offset(psize as isize);
-                let top = base.offset((size - self.top_foot_size()) as isize);
+                let chunk_top = p.cast::<u8>().add(psize);
+                let top = base.add(size - self.top_foot_size());
                 if !Chunk::inuse(p) && chunk_top >= top {
-                    let tp = p as *mut TreeChunk;
-                    debug_assert!(Segment::holds(sp, sp as *mut u8));
+                    let tp = p.cast::<TreeChunk>();
+                    debug_assert!(Segment::holds(sp, sp.cast()));
                     if p == self.dv {
                         self.dv = ptr::null_mut();
                         self.dvsize = 0;
@@ -1371,7 +1374,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if !cfg!(debug_assertions) {
             return;
         }
-        let sp = self.segment_holding(p as *mut u8);
+        let sp = self.segment_holding(p.cast());
         let sz = (*p).head & !INUSE;
         debug_assert!(!sp.is_null());
         debug_assert!(
@@ -1463,11 +1466,11 @@ impl<A: Allocator> Dlmalloc<A> {
         if !cfg!(debug_assertions) {
             return;
         }
-        for i in 0..NSMALLBINS {
-            self.check_smallbin(i as u32);
+        for i in 0..NSMALLBINS_U32 {
+            self.check_smallbin(i);
         }
-        for i in 0..NTREEBINS {
-            self.check_treebin(i as u32);
+        for i in 0..NTREEBINS_U32 {
+            self.check_treebin(i);
         }
         if self.dvsize != 0 {
             self.check_any_chunk(self.dv);
@@ -1538,7 +1541,7 @@ impl<A: Allocator> Dlmalloc<A> {
         debug_assert_eq!(tindex, idx);
         debug_assert!(tsize >= self.min_large_size());
         debug_assert!(tsize >= self.min_size_for_tree_index(idx));
-        debug_assert!(idx == NTREEBINS as u32 - 1 || tsize < self.min_size_for_tree_index(idx + 1));
+        debug_assert!(idx == NTREEBINS_U32 - 1 || tsize < self.min_size_for_tree_index(idx + 1));
 
         let mut u = t;
         let mut head = ptr::null_mut::<TreeChunk>();
@@ -1591,7 +1594,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     fn min_size_for_tree_index(&self, idx: u32) -> usize {
-        let idx = idx as usize;
+        let idx = usize::try_from(idx).unwrap();
         (1 << ((idx >> 1) + TREEBIN_SHIFT)) | ((idx & 1) << ((idx >> 1) + TREEBIN_SHIFT - 1))
     }
 
@@ -1628,7 +1631,7 @@ impl<A: Allocator> Dlmalloc<A> {
                 return false;
             }
             let mut u = t;
-            let chunk = chunk as *mut TreeChunk;
+            let chunk = chunk.cast();
             loop {
                 if u == chunk {
                     return true;
@@ -1651,7 +1654,7 @@ impl<A: Allocator> Dlmalloc<A> {
 
     pub unsafe fn destroy(mut self) -> usize {
         let mut freed = 0;
-        let mut sp = &mut self.seg as *mut Segment;
+        let mut sp: *mut Segment = &mut self.seg;
         while !sp.is_null() {
             let base = (*sp).base;
             let size = (*sp).size;
@@ -1682,11 +1685,11 @@ impl Chunk {
     }
 
     unsafe fn next(me: *mut Chunk) -> *mut Chunk {
-        (me as *mut u8).offset(((*me).head & !FLAG_BITS) as isize) as *mut Chunk
+        me.cast::<u8>().add((*me).head & !FLAG_BITS).cast()
     }
 
     unsafe fn prev(me: *mut Chunk) -> *mut Chunk {
-        (me as *mut u8).offset(-((*me).prev_foot as isize)) as *mut Chunk
+        me.cast::<u8>().sub((*me).prev_foot).cast()
     }
 
     unsafe fn cinuse(me: *mut Chunk) -> bool {
@@ -1745,7 +1748,7 @@ impl Chunk {
     }
 
     unsafe fn minus_offset(me: *mut Chunk, offset: usize) -> *mut Chunk {
-        me.cast::<u8>().offset(-(offset as isize)).cast()
+        me.cast::<u8>().sub(offset).cast()
     }
 
     unsafe fn to_mem(me: *mut Chunk) -> *mut u8 {
@@ -1757,7 +1760,7 @@ impl Chunk {
     }
 
     unsafe fn from_mem(mem: *mut u8) -> *mut Chunk {
-        mem.offset(-2 * (mem::size_of::<usize>() as isize)) as *mut Chunk
+        mem.sub(2 * mem::size_of::<usize>()).cast()
     }
 }
 
@@ -1776,11 +1779,11 @@ impl TreeChunk {
     }
 
     unsafe fn next(me: *mut TreeChunk) -> *mut TreeChunk {
-        (*TreeChunk::chunk(me)).next as *mut TreeChunk
+        (*TreeChunk::chunk(me)).next.cast()
     }
 
     unsafe fn prev(me: *mut TreeChunk) -> *mut TreeChunk {
-        (*TreeChunk::chunk(me)).prev as *mut TreeChunk
+        (*TreeChunk::chunk(me)).prev.cast()
     }
 }
 
