@@ -1642,6 +1642,26 @@ impl<A: Allocator> Dlmalloc<A> {
     unsafe fn traverse_and_check(&self) -> usize {
         0
     }
+
+    pub unsafe fn trim(&mut self, pad: usize) -> bool {
+        self.sys_trim(pad)
+    }
+
+    pub unsafe fn destroy(mut self) -> usize {
+        let mut freed = 0;
+        let mut sp = &mut self.seg as *mut Segment;
+        while !sp.is_null() {
+            let base = (*sp).base;
+            let size = (*sp).size;
+            let can_free = !Segment::is_extern(sp);
+            sp = (*sp).next;
+
+            if can_free && self.system_allocator.free(base, size) {
+                freed += size;
+            }
+        }
+        freed
+    }
 }
 
 const PINUSE: usize = 1 << 0;
