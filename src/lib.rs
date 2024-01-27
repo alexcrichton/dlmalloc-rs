@@ -143,7 +143,7 @@ impl<A: Allocator> Dlmalloc<A> {
     /// method contracts.
     #[inline]
     pub unsafe fn free(&mut self, ptr: *mut u8, size: usize, align: usize) {
-        drop((size, align));
+        let _ = (size, align);
         self.0.free(ptr)
     }
 

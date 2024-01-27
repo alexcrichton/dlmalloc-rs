@@ -1,0 +1,19 @@
+[package]
+name = "dlmalloc-fuzz"
+version = "0.0.1"
+publish = false
+edition.workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = "1.3.2"
+dlmalloc = { path = '..' }
+libfuzzer-sys = "0.4.7"
+
+[[bin]]
+name = "alloc"
+path = "fuzz_targets/alloc.rs"
+test = false
+bench = false

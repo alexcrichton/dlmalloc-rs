@@ -7,7 +7,7 @@ use core::cmp;
 use core::mem;
 use core::ptr;
 
-use Allocator;
+use crate::Allocator;
 
 pub struct Dlmalloc<A> {
     smallmap: u32,
@@ -1789,7 +1789,7 @@ impl Segment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use System;
+    use crate::System;
 
     // Prime the allocator with some allocations such that there will be free
     // chunks in the treemap
