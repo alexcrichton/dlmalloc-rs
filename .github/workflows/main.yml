@@ -9,7 +9,7 @@ jobs:
       matrix:
         rust: [stable, beta, nightly]
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust (
       run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
     - run: cargo test
@@ -24,7 +24,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - run: cargo fmt -- --check
@@ -33,7 +33,7 @@ jobs:
     name: WebAssembly
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: rustup update stable && rustup default stable && rustup target add wasm32-unknown-unknown
     - run: cargo build --target wasm32-unknown-unknown
@@ -43,7 +43,32 @@ jobs:
     name: external-platform
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: rustup update stable && rustup default stable && rustup target add x86_64-fortanix-unknown-sgx
     - run: cargo build --target x86_64-fortanix-unknown-sgx
+
+  fuzz:
+    name: Build Fuzzers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      run: rustup update nightly && rustup default nightly
+    - run: cargo install cargo-fuzz
+    - run: cargo fuzz build --dev
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Miri
+      run: |
+	rustup toolchain install nightly --component miri
+	rustup override set nightly
+	cargo miri setup
+    - name: Test with Miri
+      run: cargo miri test
+      env:
+        MIRIFLAGS: -Zmiri-tree-borrows
