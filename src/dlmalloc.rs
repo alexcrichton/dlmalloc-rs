@@ -1176,8 +1176,8 @@ impl<A: Allocator> Dlmalloc<A> {
         assert!(psize >= size + min_overhead);
 
         if !Chunk::mmapped(p) {
-            let max_overhead 
-                = min_overhead + self.min_chunk_size() * 2 + mem::align_of::<usize>() - 1;
+            let max_overhead =
+                min_overhead + self.min_chunk_size() * 2 + mem::align_of::<usize>() - 1;
 
             assert!(psize <= size + max_overhead);
         }
