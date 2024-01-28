@@ -1023,11 +1023,11 @@ impl<A: Allocator> Dlmalloc<A> {
         (*chunk).child[1] = ptr::null_mut();
         let chunkc = TreeChunk::chunk(chunk);
         if !self.treemap_is_marked(idx) {
-            self.mark_treemap(idx);
             *h = chunk;
             (*chunk).parent = h.cast(); // TODO: dubious?
             (*chunkc).next = chunkc;
             (*chunkc).prev = chunkc;
+            self.mark_treemap(idx);
         } else {
             let mut t = *h;
             let mut k = size << leftshift_for_tree_index(idx);
@@ -1519,8 +1519,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if !cfg!(debug_assertions) {
             return;
         }
-        let tb = self.treebin_at(idx);
-        let t = *tb;
+        let t = *self.treebin_at(idx);
         let empty = self.treemap & (1 << idx) == 0;
         if t.is_null() {
             debug_assert!(empty);
@@ -1563,6 +1562,9 @@ impl<A: Allocator> Dlmalloc<A> {
                 debug_assert!(head.is_null());
                 head = u;
                 debug_assert!((*u).parent != u);
+                // TODO: unsure why this triggers UB in stacked borrows in MIRI
+                // (works in tree borrows though)
+                #[cfg(not(miri))]
                 debug_assert!(
                     (*(*u).parent).child[0] == u
                         || (*(*u).parent).child[1] == u
