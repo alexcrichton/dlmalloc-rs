@@ -29,7 +29,9 @@ jobs:
     - run: cargo test --release
     - run: cargo test --features debug --release
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release
+      shell: bash
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release --features debug
+      shell: bash
 
   rustfmt:
     name: Rustfmt
