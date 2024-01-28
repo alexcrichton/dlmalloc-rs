@@ -73,26 +73,24 @@ pub unsafe trait Allocator: Send {
 /// lingering memory back to the OS. That may happen eventually though!
 pub struct Dlmalloc<A = System>(dlmalloc::Dlmalloc<A>);
 
-#[cfg(target_family = "wasm")]
-#[path = "wasm.rs"]
-mod sys;
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[path = "unix.rs"]
-mod sys;
-
-#[cfg(target_os = "xous")]
-#[path = "xous.rs"]
-mod sys;
-
-#[cfg(not(any(
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "xous",
-    target_family = "wasm"
-)))]
-#[path = "dummy.rs"]
-mod sys;
+cfg_if::cfg_if! {
+    if #[cfg(target_family = "wasm")] {
+        #[path = "wasm.rs"]
+        mod sys;
+    } else if #[cfg(target_os = "windows")] {
+        #[path = "windows.rs"]
+        mod sys;
+    } else if #[cfg(target_os = "xous")] {
+        #[path = "xous.rs"]
+        mod sys;
+    } else if #[cfg(any(target_os = "linux", target_os = "macos"))] {
+        #[path = "unix.rs"]
+        mod sys;
+    } else {
+        #[path = "dummy.rs"]
+        mod sys;
+    }
+}
 
 impl Dlmalloc<System> {
     /// Creates a new instance of an allocator

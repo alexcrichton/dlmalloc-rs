@@ -1,5 +1,3 @@
-extern crate libc;
-
 use crate::Allocator;
 use core::ptr;
 

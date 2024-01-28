@@ -4,21 +4,34 @@ on: [push, pull_request]
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        rust: [stable, beta, nightly]
+        include:
+          - os: ubuntu-latest
+            rust: stable
+          - os: ubuntu-latest
+            rust: beta
+          - os: ubuntu-latest
+            rust: nightly
+          - os: macos-latest
+            rust: stable
+          - os: windows-latest
+            rust: stable
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust (
       run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      shell: bash
     - run: cargo test
     - run: cargo test --features debug
     - run: cargo test --features global
     - run: cargo test --release
     - run: cargo test --features debug --release
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release
+      shell: bash
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release --features debug
+      shell: bash
 
   rustfmt:
     name: Rustfmt
