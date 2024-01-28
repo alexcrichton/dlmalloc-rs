@@ -1,9 +1,9 @@
+use crate::Allocator;
 #[cfg(target_arch = "wasm32")]
 use core::arch::wasm32 as wasm;
 #[cfg(target_arch = "wasm64")]
 use core::arch::wasm64 as wasm;
 use core::ptr;
-use Allocator;
 
 /// System setting for Wasm
 pub struct System {
@@ -59,14 +59,17 @@ unsafe impl Allocator for System {
 #[cfg(feature = "global")]
 pub fn acquire_global_lock() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }
 
 #[cfg(feature = "global")]
 pub fn release_global_lock() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }
 
 #[cfg(feature = "global")]
 pub unsafe fn enable_alloc_after_fork() {
     // single threaded, no need!
+    assert!(!cfg!(target_feature = "atomics"));
 }

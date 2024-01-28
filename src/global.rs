@@ -1,9 +1,8 @@
+use crate::Dlmalloc;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Deref, DerefMut};
 
-use Dlmalloc;
-
-pub use sys::enable_alloc_after_fork;
+pub use crate::sys::enable_alloc_after_fork;
 
 /// An instance of a "global allocator" backed by `Dlmalloc`
 ///
@@ -38,7 +37,7 @@ static mut DLMALLOC: Dlmalloc = Dlmalloc::new();
 struct Instance;
 
 unsafe fn get() -> Instance {
-    ::sys::acquire_global_lock();
+    crate::sys::acquire_global_lock();
     Instance
 }
 
@@ -57,6 +56,6 @@ impl DerefMut for Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
-        ::sys::release_global_lock()
+        crate::sys::release_global_lock()
     }
 }
