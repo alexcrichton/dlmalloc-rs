@@ -81,7 +81,9 @@ jobs:
         rustup toolchain install nightly --component miri
         rustup override set nightly
         cargo miri setup
-    - name: Test with Miri
+    - name: Test with Miri Stack Borrows
+      run: cargo miri test
+    - name: Test with Miri Tree Borrows
       run: cargo miri test
       env:
         MIRIFLAGS: -Zmiri-tree-borrows
