@@ -141,7 +141,8 @@ impl<A: Allocator> Dlmalloc<A> {
     /// method contracts.
     #[inline]
     pub unsafe fn free(&mut self, ptr: *mut u8, size: usize, align: usize) {
-        let _ = (size, align);
+        let _ = align;
+        self.0.validate_size(ptr, size);
         self.0.free(ptr)
     }
 
@@ -162,6 +163,8 @@ impl<A: Allocator> Dlmalloc<A> {
         old_align: usize,
         new_size: usize,
     ) -> *mut u8 {
+        self.0.validate_size(ptr, old_size);
+
         if old_align <= self.0.malloc_alignment() {
             self.0.realloc(ptr, new_size)
         } else {
