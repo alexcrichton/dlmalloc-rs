@@ -1168,6 +1168,21 @@ impl<A: Allocator> Dlmalloc<A> {
         }
     }
 
+    pub unsafe fn validate_size(&mut self, ptr: *mut u8, size: usize) {
+        let p = Chunk::from_mem(ptr);
+        let psize = Chunk::size(p);
+
+        let min_overhead = self.overhead_for(p);
+        assert!(psize >= size + min_overhead);
+
+        if !Chunk::mmapped(p) {
+            let max_overhead =
+                min_overhead + self.min_chunk_size() * 2 + mem::align_of::<usize>() - 1;
+
+            assert!(psize <= size + max_overhead);
+        }
+    }
+
     pub unsafe fn free(&mut self, mem: *mut u8) {
         self.check_malloc_state();
 
