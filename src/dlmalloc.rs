@@ -3,6 +3,22 @@
 //
 // The original source was written by Doug Lea and released to the public domain
 
+macro_rules! debug_assert {
+    ($($arg:tt)*) => {
+        if cfg!(all(feature = "debug", debug_assertions)) {
+            assert!($($arg)*);
+        }
+    };
+}
+
+macro_rules! debug_assert_eq {
+    ($($arg:tt)*) => {
+        if cfg!(all(feature = "debug", debug_assertions)) {
+            assert_eq!($($arg)*);
+        }
+    };
+}
+
 use core::cmp;
 use core::mem;
 use core::ptr;
@@ -1376,7 +1392,7 @@ impl<A: Allocator> Dlmalloc<A> {
     // Sanity checks
 
     unsafe fn check_any_chunk(&self, p: *mut Chunk) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         debug_assert!(
@@ -1386,7 +1402,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_top_chunk(&self, p: *mut Chunk) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let sp = self.segment_holding(p.cast());
@@ -1407,7 +1423,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_malloced_chunk(&self, mem: *mut u8, s: usize) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         if mem.is_null() {
@@ -1433,7 +1449,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_mmapped_chunk(&self, p: *mut Chunk) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let sz = Chunk::size(p);
@@ -1453,7 +1469,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_free_chunk(&self, p: *mut Chunk) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let sz = Chunk::size(p);
@@ -1478,7 +1494,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_malloc_state(&mut self) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         for i in 0..NSMALLBINS_U32 {
@@ -1506,7 +1522,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_smallbin(&mut self, idx: u32) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let b = self.smallbin_at(idx);
@@ -1531,7 +1547,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_treebin(&mut self, idx: u32) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let t = *self.treebin_at(idx);
@@ -1545,7 +1561,7 @@ impl<A: Allocator> Dlmalloc<A> {
     }
 
     unsafe fn check_tree(&mut self, t: *mut TreeChunk) {
-        if !cfg!(debug_assertions) {
+        if !cfg!(all(feature = "debug", debug_assertions)) {
             return;
         }
         let tc = TreeChunk::chunk(t);
