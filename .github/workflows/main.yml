@@ -18,11 +18,28 @@ jobs:
             rust: stable
           - os: windows-latest
             rust: stable
+          - os: ubuntu-latest
+            rust: stable
+            target: wasm32-wasip1
     steps:
     - uses: actions/checkout@v4
-    - name: Install Rust (
-      run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - run: rustup update ${{ matrix.rust }} --no-self-update && rustup default ${{ matrix.rust }}
       shell: bash
+
+    # Configure cross-builds by adding the rustup target and configuring future
+    # cargo invocations.
+    - run: |
+        rustup target add ${{ matrix.target }}
+        echo CARGO_BUILD_TARGET=${{ matrix.target }} >> $GITHUB_ENV
+      if: matrix.target != ''
+
+    # For wasm install wasmtime as a test runner and configure it with Cargo.
+    - name: Setup `wasmtime`
+      uses: bytecodealliance/actions/wasmtime/setup@v1
+      if: matrix.target == 'wasm32-wasip1'
+    - run: echo CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime >> $GITHUB_ENV
+      if: matrix.target == 'wasm32-wasip1'
+
     - run: cargo test
     - run: cargo test --features debug
     - run: cargo test --features global
