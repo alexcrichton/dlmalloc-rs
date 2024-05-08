@@ -23,7 +23,7 @@ jobs:
             target: wasm32-wasip1
     steps:
     - uses: actions/checkout@v4
-    - run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+    - run: rustup update ${{ matrix.rust }} --no-self-update && rustup default ${{ matrix.rust }}
       shell: bash
 
     # Configure cross-builds by adding the rustup target and configuring future
