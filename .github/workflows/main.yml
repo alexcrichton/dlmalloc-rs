@@ -37,7 +37,7 @@ jobs:
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
       if: matrix.target == 'wasm32-wasip1'
-    - run: echo CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime
+    - run: echo CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime >> $GITHUB_ENV
       if: matrix.target == 'wasm32-wasip1'
 
     - run: cargo test
