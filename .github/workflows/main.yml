@@ -44,11 +44,22 @@ jobs:
     - run: cargo test --features debug
     - run: cargo test --features global
     - run: cargo test --release
+      env:
+        CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
+    - run: cargo test --release
+      env:
+        CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: false
     - run: cargo test --features debug --release
+      env:
+        CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release
       shell: bash
+      env:
+        CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
     - run: RUSTFLAGS='--cfg test_lots' cargo test --release --features debug
       shell: bash
+      env:
+        CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS: true
 
   rustfmt:
     name: Rustfmt
