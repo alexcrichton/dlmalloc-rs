@@ -130,6 +130,10 @@ impl<A> Dlmalloc<A> {
             system_allocator,
         }
     }
+
+    pub fn allocator(&self) -> &A {
+        &self.system_allocator
+    }
 }
 
 impl<A: Allocator> Dlmalloc<A> {
