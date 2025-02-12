@@ -18,7 +18,7 @@ impl System {
 
 unsafe impl Allocator for System {
     fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
-        let pages = size / self.page_size();
+        let pages = size.div_ceil(self.page_size());
         let prev = wasm::memory_grow(0, pages);
         if prev == usize::max_value() {
             return (ptr::null_mut(), 0, 0);
