@@ -207,7 +207,7 @@ impl<A: Allocator> Dlmalloc<A> {
         self.0.destroy()
     }
 
-    /// Get a reference the underlying [`Allocator`] that this `Dlmalloc` was
+    /// Get a reference to the underlying [`Allocator`] that this `Dlmalloc` was
     /// constructed with.
     pub fn allocator(&self) -> &A {
         self.0.allocator()
