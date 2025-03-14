@@ -207,9 +207,15 @@ impl<A: Allocator> Dlmalloc<A> {
         self.0.destroy()
     }
 
-    /// Get a reference the underlying [`Allocator`] that this `Dlmalloc` was
+    /// Get a reference to the underlying [`Allocator`] that this `Dlmalloc` was
     /// constructed with.
     pub fn allocator(&self) -> &A {
         self.0.allocator()
+    }
+
+    /// Get a mutable reference to the underlying [`Allocator`] that this
+    /// `Dlmalloc` was constructed with.
+    pub fn allocator_mut(&mut self) -> &mut A {
+        self.0.allocator_mut()
     }
 }
