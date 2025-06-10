@@ -31,7 +31,6 @@ libc = { version = "0.2", default-features = false }
 # For more information on these dependencies see rust-lang/rust's
 # `src/tools/rustc-std-workspace` folder
 core = { version = '1.0.0', optional = true, package = 'rustc-std-workspace-core' }
-compiler_builtins = { version = '0.1.0', optional = true }
 cfg-if = "1.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
@@ -58,4 +57,4 @@ global = []
 # Enable very expensive debug checks in this crate
 debug = []
 
-rustc-dep-of-std = ['core', 'compiler_builtins/rustc-dep-of-std']
+rustc-dep-of-std = ['core']
