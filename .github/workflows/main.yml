@@ -110,8 +110,8 @@ jobs:
         rustup override set nightly
         cargo miri setup
     - name: Test with Miri Stack Borrows
-      run: cargo miri test
+      run: cargo miri test --features global
     - name: Test with Miri Tree Borrows
-      run: cargo miri test
+      run: cargo miri test --features global
       env:
         MIRIFLAGS: -Zmiri-tree-borrows
