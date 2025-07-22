@@ -21,6 +21,9 @@ jobs:
           - os: ubuntu-latest
             rust: stable
             target: wasm32-wasip1
+          - os: ubuntu-latest
+            rust: stable
+            target: i686-unknown-linux-gnu
     steps:
     - uses: actions/checkout@v4
     - run: rustup update ${{ matrix.rust }} --no-self-update && rustup default ${{ matrix.rust }}
