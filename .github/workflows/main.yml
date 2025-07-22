@@ -21,6 +21,10 @@ jobs:
           - os: ubuntu-latest
             rust: stable
             target: wasm32-wasip1
+          - os: ubuntu-latest
+            rust: stable
+            target: i686-unknown-linux-gnu
+            gcc_target: i686-linux-gnu
     steps:
     - uses: actions/checkout@v4
     - run: rustup update ${{ matrix.rust }} --no-self-update && rustup default ${{ matrix.rust }}
@@ -39,6 +43,17 @@ jobs:
       if: matrix.target == 'wasm32-wasip1'
     - run: echo CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime >> $GITHUB_ENV
       if: matrix.target == 'wasm32-wasip1'
+
+    - name: Install cross-compilation tools
+      run: |
+        set -ex
+
+        sudo apt-get update
+        sudo apt-get install -y gcc-${{ matrix.gcc_target }}
+
+        upcase=$(echo ${{ matrix.target }} | awk '{ print toupper($0) }' | sed 's/-/_/g')
+        echo CARGO_TARGET_${upcase}_LINKER=${{ matrix.gcc_target }}-gcc >> $GITHUB_ENV
+      if: matrix.gcc_target != ''
 
     - run: cargo test
     - run: cargo test --features debug
