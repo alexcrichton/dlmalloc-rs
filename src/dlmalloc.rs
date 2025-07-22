@@ -1024,14 +1024,15 @@ impl<A: Allocator> Dlmalloc<A> {
 
     unsafe fn insert_small_chunk(&mut self, chunk: *mut Chunk, size: usize) {
         let idx = self.small_index(size);
-        let head = self.smallbin_at(idx);
-        let mut f = head;
         debug_assert!(size >= self.min_chunk_size());
-        if !self.smallmap_is_marked(idx) {
+        let (f, head) = if !self.smallmap_is_marked(idx) {
             self.mark_smallmap(idx);
+            let head = self.smallbin_at(idx);
+            (head, head)
         } else {
-            f = (*head).prev;
-        }
+            let head = self.smallbin_at(idx);
+            ((*head).prev, head)
+        };
 
         (*head).prev = chunk;
         (*f).next = chunk;
