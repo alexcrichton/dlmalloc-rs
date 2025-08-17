@@ -21,9 +21,71 @@ macro_rules! debug_assert_eq {
 
 use core::cmp;
 use core::mem;
+use core::num::NonZeroUsize;
 use core::ptr;
 
 use crate::Allocator;
+
+/// Configuration for the dlmalloc allocator.
+// TODO: fields documentation?
+pub struct DlmallocConfig {
+    /// The unit for allocating and deallocating memory from the system.
+    ///
+    /// Systems with mmap tend to either require or encourage larger granularities.
+    /// You can increase this value to prevent system allocation functions to be called so
+    /// often, especially if they are slow. The value must be at least one
+    /// page and must be a power of two.
+    pub granularity: NonZeroUsize,
+    /// The maximum amount of unused top-most memory to keep
+    /// before releasing in [`Dlmalloc::free`](crate::Dlmalloc::free).
+    ///
+    /// As a rough guide, you might set to a value close to the
+    /// average size of a process (program) running on your system.
+    /// Releasing this much memory would allow such a process to run in
+    /// memory. Generally, it is worth tuning trim thresholds when a
+    /// program undergoes phases where several large chunks are allocated
+    /// and released in ways that can reuse each other's storage, perhaps
+    /// mixed with phases where there are no such chunks at all. The trim
+    /// value must be greater than page size to have any useful effect. To
+    /// disable trimming completely, you can set to [`usize::MAX`].
+    ///
+    /// Note that the trick
+    /// some people use of mallocing a huge space and then freeing it at
+    /// program startup, in an attempt to reserve system memory, doesn't
+    /// have the intended effect under automatic trimming, since that memory
+    /// will immediately be returned to the system.
+    pub trim_threshold: usize,
+    /// The number of consolidated frees between checks to release unused segments when freeing.
+    ///
+    /// When using non-contiguous segments, checking only for topmost space
+    /// doesn't always suffice to trigger trimming.
+    /// To compensate for this, [`Dlmalloc::free`](crate::Dlmalloc::free) will,
+    /// with a period of this field's value (or the current number of segments, if greater)
+    /// try to release unused segments to the OS when freeing chunks that result in
+    /// consolidation. The best value for this parameter is a compromise
+    /// between slowing down frees with relatively costly checks that
+    /// rarely trigger versus holding on to unused memory. To effectively
+    /// disable, set to [`usize::MAX`]. This may lead to a very slight speed
+    /// improvement at the expense of carrying around more memory.
+    pub max_release_check_rate: usize,
+}
+
+impl DlmallocConfig {
+    /// Creates a new configuration
+    pub const fn new() -> Self {
+        Self {
+            granularity: NonZeroUsize::new(64 * 1024).unwrap(),
+            trim_threshold: 2 * 1024 * 1024,
+            max_release_check_rate: 4095,
+        }
+    }
+}
+
+impl Default for DlmallocConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct Dlmalloc<A> {
     smallmap: u32,
@@ -41,6 +103,7 @@ pub struct Dlmalloc<A> {
     least_addr: *mut u8,
     release_checks: usize,
     system_allocator: A,
+    config: DlmallocConfig,
 }
 unsafe impl<A: Send> Send for Dlmalloc<A> {}
 
@@ -52,11 +115,6 @@ const TREEBIN_SHIFT: usize = 8;
 
 const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
-
-// TODO: runtime configurable? documentation?
-const DEFAULT_GRANULARITY: usize = 64 * 1024;
-const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
-const MAX_RELEASE_CHECK_RATE: usize = 4095;
 
 #[repr(C)]
 struct Chunk {
@@ -106,8 +164,12 @@ fn leftshift_for_tree_index(x: u32) -> u32 {
 }
 
 impl<A> Dlmalloc<A> {
-    pub const fn new(system_allocator: A) -> Dlmalloc<A> {
-        Dlmalloc {
+    pub const fn new(system_allocator: A) -> Self {
+        Self::with_config(system_allocator, DlmallocConfig::new())
+    }
+
+    pub const fn with_config(system_allocator: A, config: DlmallocConfig) -> Self {
+        Self {
             smallmap: 0,
             treemap: 0,
             smallbins: [ptr::null_mut(); (NSMALLBINS + 1) * 2],
@@ -128,6 +190,7 @@ impl<A> Dlmalloc<A> {
             least_addr: ptr::null_mut(),
             release_checks: 0,
             system_allocator,
+            config,
         }
     }
 
@@ -187,11 +250,12 @@ impl<A: Allocator> Dlmalloc<A> {
         //                                `max_request` will not be honored
         //   + self.top_foot_size()
         //   + self.malloc_alignment()
-        //   + DEFAULT_GRANULARITY
+        //   + granularity
         // ==
         //   usize::MAX
+        let granularity = self.config.granularity.get();
         let min_sys_alloc_space =
-            ((!0 - (DEFAULT_GRANULARITY + self.top_foot_size() + self.malloc_alignment()) + 1)
+            ((!0 - (granularity + self.top_foot_size() + self.malloc_alignment()) + 1)
                 & !self.malloc_alignment())
                 - self.chunk_overhead()
                 + 1;
@@ -386,7 +450,7 @@ impl<A: Allocator> Dlmalloc<A> {
         // keep in sync with max_request
         let asize = align_up(
             size + self.top_foot_size() + self.malloc_alignment(),
-            DEFAULT_GRANULARITY,
+            self.config.granularity.get(),
         );
 
         let (tbase, tsize, flags) = self.system_allocator.alloc(asize);
@@ -404,7 +468,7 @@ impl<A: Allocator> Dlmalloc<A> {
             self.seg.base = tbase;
             self.seg.size = tsize;
             self.seg.flags = flags;
-            self.release_checks = MAX_RELEASE_CHECK_RATE;
+            self.release_checks = self.config.max_release_check_rate;
             self.init_bins();
             let tsize = tsize - self.top_foot_size();
             self.init_top(tbase.cast(), tsize);
@@ -562,7 +626,9 @@ impl<A: Allocator> Dlmalloc<A> {
         }
 
         // Keep the old chunk if it's big enough but not too big
-        if oldsize >= nb + mem::size_of::<usize>() && (oldsize - nb) <= (DEFAULT_GRANULARITY << 1) {
+        if oldsize >= nb + mem::size_of::<usize>()
+            && (oldsize - nb) <= (self.config.granularity.get() << 1)
+        {
             return oldp;
         }
 
@@ -731,7 +797,7 @@ impl<A: Allocator> Dlmalloc<A> {
         self.topsize = size;
         (*p).head = size | PINUSE;
         (*Chunk::plus_offset(p, size)).head = self.top_foot_size();
-        self.trim_check = DEFAULT_TRIM_THRESHOLD;
+        self.trim_check = self.config.trim_threshold;
     }
 
     unsafe fn init_bins(&mut self) {
@@ -1297,7 +1363,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if pad < self.max_request() && !self.top.is_null() {
             pad += self.top_foot_size();
             if self.topsize > pad {
-                let unit = DEFAULT_GRANULARITY;
+                let unit = self.config.granularity.get();
                 let extra = ((self.topsize - pad + unit - 1) / unit - 1) * unit;
                 let sp = self.segment_holding(self.top.cast());
                 debug_assert!(!sp.is_null());
@@ -1390,10 +1456,10 @@ impl<A: Allocator> Dlmalloc<A> {
             pred = sp;
             sp = next;
         }
-        self.release_checks = if nsegs > MAX_RELEASE_CHECK_RATE {
+        self.release_checks = if nsegs > self.config.max_release_check_rate {
             nsegs
         } else {
-            MAX_RELEASE_CHECK_RATE
+            self.config.max_release_check_rate
         };
         return released;
     }

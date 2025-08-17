@@ -5,7 +5,7 @@ use std::cmp;
 const MAX_ALLOCATED: usize = 100 << 20; // 100 MB
 
 pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
-    let mut a = Dlmalloc::new();
+    let mut a = Dlmalloc::with_system();
     let mut ptrs = Vec::new();
     let mut allocated = 0;
     unsafe {
