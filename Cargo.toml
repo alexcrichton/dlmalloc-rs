@@ -10,6 +10,7 @@ documentation = "https://docs.rs/dlmalloc"
 description = """
 A Rust port of the dlmalloc allocator
 """
+exclude = ["src/dlmalloc.c"]
 edition.workspace = true
 
 [workspace]
