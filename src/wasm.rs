@@ -4,18 +4,14 @@ use core::arch::wasm32 as wasm;
 #[cfg(target_arch = "wasm64")]
 use core::arch::wasm64 as wasm;
 use core::ptr;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 extern "C" {
     static __heap_base: u8;
     static __heap_end: u8;
 }
 
-const PREEXISTING_UNTRIED: u8 = 0;
-const PREEXISTING_DONATED: u8 = 1;
-const PREEXISTING_DISABLED: u8 = 2;
-
-static PREEXISTING_STATE: AtomicU8 = AtomicU8::new(PREEXISTING_UNTRIED);
+static PREEXISTING_USED: AtomicBool = AtomicBool::new(false);
 
 fn preexisting_chunk(size: usize, heap_base: usize, heap_end: usize) -> Option<(usize, usize)> {
     let start = heap_base;
@@ -36,39 +32,14 @@ fn preexisting_chunk(size: usize, heap_base: usize, heap_end: usize) -> Option<(
 }
 
 fn try_donate_preexisting(
-    state: &AtomicU8,
+    state: &AtomicBool,
     chunk: Option<(usize, usize)>,
 ) -> Option<(usize, usize)> {
-    if state.load(Ordering::Relaxed) != PREEXISTING_UNTRIED {
+    if state.swap(true, Ordering::Relaxed) {
         return None;
     }
 
-    match chunk {
-        Some(chunk) => {
-            if state
-                .compare_exchange(
-                    PREEXISTING_UNTRIED,
-                    PREEXISTING_DONATED,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                Some(chunk)
-            } else {
-                None
-            }
-        }
-        None => {
-            let _ = state.compare_exchange(
-                PREEXISTING_UNTRIED,
-                PREEXISTING_DISABLED,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
-            None
-        }
-    }
+    chunk
 }
 
 fn alloc_via_grow(size: usize, page_size: usize) -> (*mut u8, usize, u32) {
@@ -167,7 +138,7 @@ unsafe impl Allocator for PreexistingSystem {
             let heap_end = unsafe { &__heap_end as *const u8 as usize };
 
             let chunk = preexisting_chunk(size, heap_base, heap_end);
-            if let Some((base, len)) = try_donate_preexisting(&PREEXISTING_STATE, chunk) {
+            if let Some((base, len)) = try_donate_preexisting(&PREEXISTING_USED, chunk) {
                 return (base as *mut u8, len, 0);
             }
         }
@@ -202,11 +173,8 @@ unsafe impl Allocator for PreexistingSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        preexisting_chunk, try_donate_preexisting, PREEXISTING_DISABLED, PREEXISTING_DONATED,
-        PREEXISTING_UNTRIED,
-    };
-    use core::sync::atomic::{AtomicU8, Ordering};
+    use super::{preexisting_chunk, try_donate_preexisting};
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     fn legacy_grow_only(
         size: usize,
@@ -227,13 +195,13 @@ mod tests {
         let heap_end = page_size * 4;
 
         let chunk = preexisting_chunk(16, heap_base, heap_end).unwrap();
-        let state = AtomicU8::new(PREEXISTING_UNTRIED);
+        let state = AtomicBool::new(false);
         let new_behavior = try_donate_preexisting(&state, Some(chunk));
         let legacy_behavior = legacy_grow_only(16, page_size, usize::MAX);
 
         assert_eq!(new_behavior, Some((page_size, page_size * 3)));
         assert_eq!(legacy_behavior, None);
-        assert_eq!(state.load(Ordering::Relaxed), PREEXISTING_DONATED);
+        assert!(state.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -251,12 +219,12 @@ mod tests {
         let page_size = 64 * 1024;
         let heap_base = page_size;
         let heap_end = page_size * 2;
-        let state = AtomicU8::new(PREEXISTING_UNTRIED);
+        let state = AtomicBool::new(false);
 
         let first = preexisting_chunk(page_size * 3, heap_base, heap_end);
         assert_eq!(first, None);
         assert_eq!(try_donate_preexisting(&state, first), None);
-        assert_eq!(state.load(Ordering::Relaxed), PREEXISTING_DISABLED);
+        assert!(state.load(Ordering::Relaxed));
 
         let second = preexisting_chunk(16, heap_base, heap_end);
         assert_eq!(second, Some((page_size, page_size)));
@@ -265,13 +233,13 @@ mod tests {
 
     #[test]
     fn one_chunk_donates_only_once() {
-        let state = AtomicU8::new(PREEXISTING_UNTRIED);
+        let state = AtomicBool::new(false);
 
         assert_eq!(
             try_donate_preexisting(&state, Some((64 * 1024, 128 * 1024))),
             Some((64 * 1024, 128 * 1024))
         );
-        assert_eq!(state.load(Ordering::Relaxed), PREEXISTING_DONATED);
+        assert!(state.load(Ordering::Relaxed));
         assert_eq!(
             try_donate_preexisting(&state, Some((64 * 1024, 64 * 1024))),
             None
