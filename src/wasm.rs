@@ -17,30 +17,17 @@ const PREEXISTING_DISABLED: u8 = 2;
 
 static PREEXISTING_STATE: AtomicU8 = AtomicU8::new(PREEXISTING_UNTRIED);
 
-fn align_up(value: usize, alignment: usize) -> Option<usize> {
-    value
-        .checked_add(alignment - 1)
-        .map(|v| v & !(alignment - 1))
-}
-
-fn preexisting_chunk(
-    size: usize,
-    page_size: usize,
-    heap_base: usize,
-    heap_end: usize,
-    current_memory: usize,
-) -> Option<(usize, usize)> {
-    let start = align_up(heap_base, page_size)?;
+fn preexisting_chunk(size: usize, heap_base: usize, heap_end: usize) -> Option<(usize, usize)> {
+    let start = heap_base;
     if start == 0 {
         return None;
     }
 
-    let end = core::cmp::min(heap_end, current_memory);
-    if end <= start {
+    if heap_end <= start {
         return None;
     }
 
-    let len = end - start;
+    let len = heap_end - start;
     if len < size {
         return None;
     }
@@ -169,14 +156,10 @@ unsafe impl Allocator for PreexistingSystem {
         let page_size = self.page_size();
 
         if size != 0 {
-            let current_memory = match wasm::memory_size(0).checked_mul(page_size) {
-                Some(v) => v,
-                None => return (ptr::null_mut(), 0, 0),
-            };
             let heap_base = unsafe { &__heap_base as *const u8 as usize };
             let heap_end = unsafe { &__heap_end as *const u8 as usize };
 
-            let chunk = preexisting_chunk(size, page_size, heap_base, heap_end, current_memory);
+            let chunk = preexisting_chunk(size, heap_base, heap_end);
             if let Some((base, len)) = try_donate_preexisting(&PREEXISTING_STATE, chunk) {
                 return (base as *mut u8, len, 0);
             }
@@ -213,8 +196,8 @@ unsafe impl Allocator for PreexistingSystem {
 #[cfg(test)]
 mod tests {
     use super::{
-        align_up, preexisting_chunk, try_donate_preexisting, PREEXISTING_DISABLED,
-        PREEXISTING_DONATED, PREEXISTING_UNTRIED,
+        preexisting_chunk, try_donate_preexisting, PREEXISTING_DISABLED, PREEXISTING_DONATED,
+        PREEXISTING_UNTRIED,
     };
     use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -235,9 +218,8 @@ mod tests {
         let page_size = 64 * 1024;
         let heap_base = page_size;
         let heap_end = page_size * 4;
-        let current_memory = page_size * 4;
 
-        let chunk = preexisting_chunk(16, page_size, heap_base, heap_end, current_memory).unwrap();
+        let chunk = preexisting_chunk(16, heap_base, heap_end).unwrap();
         let state = AtomicU8::new(PREEXISTING_UNTRIED);
         let new_behavior = try_donate_preexisting(&state, Some(chunk));
         let legacy_behavior = legacy_grow_only(16, page_size, usize::MAX);
@@ -252,9 +234,8 @@ mod tests {
         let page_size = 64 * 1024;
         let heap_base = page_size;
         let heap_end = page_size * 4;
-        let current_memory = page_size * 8;
 
-        let chunk = preexisting_chunk(16, page_size, heap_base, heap_end, current_memory).unwrap();
+        let chunk = preexisting_chunk(16, heap_base, heap_end).unwrap();
         assert_eq!(chunk, (page_size, page_size * 3));
     }
 
@@ -263,21 +244,14 @@ mod tests {
         let page_size = 64 * 1024;
         let heap_base = page_size;
         let heap_end = page_size * 2;
-        let current_memory = page_size * 8;
         let state = AtomicU8::new(PREEXISTING_UNTRIED);
 
-        let first = preexisting_chunk(
-            page_size * 3,
-            page_size,
-            heap_base,
-            heap_end,
-            current_memory,
-        );
+        let first = preexisting_chunk(page_size * 3, heap_base, heap_end);
         assert_eq!(first, None);
         assert_eq!(try_donate_preexisting(&state, first), None);
         assert_eq!(state.load(Ordering::Relaxed), PREEXISTING_DISABLED);
 
-        let second = preexisting_chunk(16, page_size, heap_base, heap_end, current_memory);
+        let second = preexisting_chunk(16, heap_base, heap_end);
         assert_eq!(second, Some((page_size, page_size)));
         assert_eq!(try_donate_preexisting(&state, second), None);
     }
@@ -302,13 +276,8 @@ mod tests {
         let page_size = 64 * 1024;
         let heap_base = 0;
         let heap_end = page_size * 4;
-        let current_memory = page_size * 8;
 
-        assert_eq!(
-            preexisting_chunk(16, page_size, heap_base, heap_end, current_memory),
-            None
-        );
-        assert_eq!(align_up(heap_base, page_size), Some(0));
+        assert_eq!(preexisting_chunk(16, heap_base, heap_end), None);
     }
 }
 
