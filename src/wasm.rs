@@ -6,6 +6,7 @@ use core::arch::wasm64 as wasm;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(target_os = "unknown")]
 extern "C" {
     static __heap_base: u8;
     static __heap_end: u8;
@@ -13,7 +14,11 @@ extern "C" {
 
 static PREEXISTING_USED: AtomicBool = AtomicBool::new(false);
 
-fn preexisting_chunk(size: usize, heap_base: usize, heap_end: usize) -> Option<(usize, usize)> {
+fn preexisting_chunk_from_bounds(
+    size: usize,
+    heap_base: usize,
+    heap_end: usize,
+) -> Option<(usize, usize)> {
     let start = heap_base;
     if start == 0 {
         return None;
@@ -29,6 +34,18 @@ fn preexisting_chunk(size: usize, heap_base: usize, heap_end: usize) -> Option<(
     }
 
     Some((start, len))
+}
+
+#[cfg(target_os = "unknown")]
+fn preexisting_chunk_from_linker(size: usize) -> Option<(usize, usize)> {
+    let heap_base = unsafe { &__heap_base as *const u8 as usize };
+    let heap_end = unsafe { &__heap_end as *const u8 as usize };
+    preexisting_chunk_from_bounds(size, heap_base, heap_end)
+}
+
+#[cfg(not(target_os = "unknown"))]
+fn preexisting_chunk_from_linker(_size: usize) -> Option<(usize, usize)> {
+    None
 }
 
 fn try_donate_preexisting(
@@ -84,10 +101,7 @@ unsafe impl Allocator for System {
         let page_size = self.page_size();
 
         if size != 0 {
-            let heap_base = unsafe { &__heap_base as *const u8 as usize };
-            let heap_end = unsafe { &__heap_end as *const u8 as usize };
-
-            let chunk = preexisting_chunk(size, heap_base, heap_end);
+            let chunk = preexisting_chunk_from_linker(size);
             if let Some((base, len)) = try_donate_preexisting(&PREEXISTING_USED, chunk) {
                 return (base as *mut u8, len, 0);
             }
@@ -123,7 +137,7 @@ unsafe impl Allocator for System {
 
 #[cfg(test)]
 mod tests {
-    use super::{preexisting_chunk, try_donate_preexisting};
+    use super::{preexisting_chunk_from_bounds, try_donate_preexisting};
     use core::sync::atomic::{AtomicBool, Ordering};
 
     fn legacy_grow_only(
@@ -144,7 +158,7 @@ mod tests {
         let heap_base = page_size;
         let heap_end = page_size * 4;
 
-        let chunk = preexisting_chunk(16, heap_base, heap_end).unwrap();
+        let chunk = preexisting_chunk_from_bounds(16, heap_base, heap_end).unwrap();
         let state = AtomicBool::new(false);
         let new_behavior = try_donate_preexisting(&state, Some(chunk));
         let legacy_behavior = legacy_grow_only(16, page_size, usize::MAX);
@@ -160,7 +174,7 @@ mod tests {
         let heap_base = page_size;
         let heap_end = page_size * 4;
 
-        let chunk = preexisting_chunk(16, heap_base, heap_end).unwrap();
+        let chunk = preexisting_chunk_from_bounds(16, heap_base, heap_end).unwrap();
         assert_eq!(chunk, (page_size, page_size * 3));
     }
 
@@ -171,12 +185,12 @@ mod tests {
         let heap_end = page_size * 2;
         let state = AtomicBool::new(false);
 
-        let first = preexisting_chunk(page_size * 3, heap_base, heap_end);
+        let first = preexisting_chunk_from_bounds(page_size * 3, heap_base, heap_end);
         assert_eq!(first, None);
         assert_eq!(try_donate_preexisting(&state, first), None);
         assert!(state.load(Ordering::Relaxed));
 
-        let second = preexisting_chunk(16, heap_base, heap_end);
+        let second = preexisting_chunk_from_bounds(16, heap_base, heap_end);
         assert_eq!(second, Some((page_size, page_size)));
         assert_eq!(try_donate_preexisting(&state, second), None);
     }
@@ -202,7 +216,7 @@ mod tests {
         let heap_base = 0;
         let heap_end = page_size * 4;
 
-        assert_eq!(preexisting_chunk(16, heap_base, heap_end), None);
+        assert_eq!(preexisting_chunk_from_bounds(16, heap_base, heap_end), None);
     }
 }
 
