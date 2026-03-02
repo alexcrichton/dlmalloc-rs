@@ -20,9 +20,6 @@ use core::cmp;
 use core::ptr;
 use sys::System;
 
-#[cfg(target_family = "wasm")]
-pub use self::sys::PreexistingSystem;
-
 #[cfg(feature = "global")]
 pub use self::global::{enable_alloc_after_fork, GlobalDlmalloc};
 

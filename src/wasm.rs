@@ -69,9 +69,6 @@ fn alloc_via_grow(size: usize, page_size: usize) -> (*mut u8, usize, u32) {
 }
 
 /// System setting for Wasm.
-///
-/// This is the default wasm allocator backend and only allocates by growing
-/// linear memory with `memory.grow`.
 pub struct System {
     _priv: (),
 }
@@ -83,53 +80,6 @@ impl System {
 }
 
 unsafe impl Allocator for System {
-    fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
-        alloc_via_grow(size, self.page_size())
-    }
-
-    fn remap(&self, _ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
-        ptr::null_mut()
-    }
-
-    fn free_part(&self, _ptr: *mut u8, _oldsize: usize, _newsize: usize) -> bool {
-        false
-    }
-
-    fn free(&self, _ptr: *mut u8, _size: usize) -> bool {
-        false
-    }
-
-    fn can_release_part(&self, _flags: u32) -> bool {
-        false
-    }
-
-    fn allocates_zeros(&self) -> bool {
-        true
-    }
-
-    fn page_size(&self) -> usize {
-        64 * 1024
-    }
-}
-
-/// Opt-in wasm allocator backend that can donate the pre-existing linear
-/// memory region to dlmalloc once.
-///
-/// This allocator assumes the region between `__heap_base` and `__heap_end`
-/// can be exclusively owned by dlmalloc. Only use this if no other runtime or
-/// allocator in the module also expects to own that region.
-pub struct PreexistingSystem {
-    _priv: (),
-}
-
-impl PreexistingSystem {
-    /// Creates a new opt-in preexisting-heap allocator backend.
-    pub const fn new() -> PreexistingSystem {
-        PreexistingSystem { _priv: () }
-    }
-}
-
-unsafe impl Allocator for PreexistingSystem {
     fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
         let page_size = self.page_size();
 
