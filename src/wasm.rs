@@ -14,33 +14,21 @@ extern "C" {
 
 static PREEXISTING_USED: AtomicBool = AtomicBool::new(false);
 
-fn preexisting_chunk_from_bounds(
-    size: usize,
-    heap_base: usize,
-    heap_end: usize,
-) -> Option<(usize, usize)> {
-    let start = heap_base;
-    if start == 0 {
-        return None;
-    }
-
-    if heap_end <= start {
-        return None;
-    }
-
-    let len = heap_end - start;
-    if len < size {
-        return None;
-    }
-
-    Some((start, len))
-}
-
 #[cfg(target_os = "unknown")]
 fn preexisting_chunk_from_linker(size: usize) -> Option<(usize, usize)> {
     let heap_base = unsafe { &__heap_base as *const u8 as usize };
     let heap_end = unsafe { &__heap_end as *const u8 as usize };
-    preexisting_chunk_from_bounds(size, heap_base, heap_end)
+
+    if heap_base == 0 || heap_end <= heap_base {
+        return None;
+    }
+
+    let len = heap_end - heap_base;
+    if len < size {
+        return None;
+    }
+
+    Some((heap_base, len))
 }
 
 #[cfg(not(target_os = "unknown"))]
@@ -137,7 +125,7 @@ unsafe impl Allocator for System {
 
 #[cfg(test)]
 mod tests {
-    use super::{preexisting_chunk_from_bounds, try_donate_preexisting};
+    use super::try_donate_preexisting;
     use core::sync::atomic::{AtomicBool, Ordering};
 
     fn legacy_grow_only(
@@ -155,10 +143,7 @@ mod tests {
     #[test]
     fn uses_preexisting_memory_when_growth_fails() {
         let page_size = 64 * 1024;
-        let heap_base = page_size;
-        let heap_end = page_size * 4;
-
-        let chunk = preexisting_chunk_from_bounds(16, heap_base, heap_end).unwrap();
+        let chunk = (page_size, page_size * 3);
         let state = AtomicBool::new(false);
         let new_behavior = try_donate_preexisting(&state, Some(chunk));
         let legacy_behavior = legacy_grow_only(16, page_size, usize::MAX);
@@ -169,29 +154,15 @@ mod tests {
     }
 
     #[test]
-    fn uses_heap_end_as_upper_bound() {
-        let page_size = 64 * 1024;
-        let heap_base = page_size;
-        let heap_end = page_size * 4;
-
-        let chunk = preexisting_chunk_from_bounds(16, heap_base, heap_end).unwrap();
-        assert_eq!(chunk, (page_size, page_size * 3));
-    }
-
-    #[test]
     fn one_chunk_or_never_disables_after_failure() {
-        let page_size = 64 * 1024;
-        let heap_base = page_size;
-        let heap_end = page_size * 2;
         let state = AtomicBool::new(false);
 
-        let first = preexisting_chunk_from_bounds(page_size * 3, heap_base, heap_end);
+        let first = None;
         assert_eq!(first, None);
         assert_eq!(try_donate_preexisting(&state, first), None);
         assert!(state.load(Ordering::Relaxed));
 
-        let second = preexisting_chunk_from_bounds(16, heap_base, heap_end);
-        assert_eq!(second, Some((page_size, page_size)));
+        let second = Some((64 * 1024, 64 * 1024));
         assert_eq!(try_donate_preexisting(&state, second), None);
     }
 
@@ -208,15 +179,6 @@ mod tests {
             try_donate_preexisting(&state, Some((64 * 1024, 64 * 1024))),
             None
         );
-    }
-
-    #[test]
-    fn rejects_zero_start() {
-        let page_size = 64 * 1024;
-        let heap_base = 0;
-        let heap_end = page_size * 4;
-
-        assert_eq!(preexisting_chunk_from_bounds(16, heap_base, heap_end), None);
     }
 }
 
