@@ -4,7 +4,7 @@ use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 #[test]
 fn smoke() {
-    let mut a = Dlmalloc::new();
+    let mut a = Dlmalloc::with_system();
     unsafe {
         let ptr = a.malloc(1, 1);
         assert!(!ptr.is_null());
