@@ -16,7 +16,7 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
             // or deallocating.
             let free = match ptrs.len() {
                 0 => false,
-                0..=10_000 => u.ratio(1, 3)?,
+                1..=10_000 => u.ratio(1, 3)?,
                 _ => u.arbitrary()?,
             };
             if free {
@@ -28,7 +28,7 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
             }
 
             // 1/100 chance of reallocating a pointer to a different size.
-            if ptrs.len() > 0 && u.ratio(1, 100)? {
+            if !ptrs.is_empty() && u.ratio(1, 100)? {
                 let idx = u.choose_index(ptrs.len())?;
                 let (ptr, size, align) = ptrs.swap_remove(idx);
 
@@ -51,12 +51,12 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
                 // Perform the `realloc` and assert that all bytes were copied.
                 let mut tmp = Vec::new();
                 for i in 0..cmp::min(size, new_size) {
-                    tmp.push(*ptr.offset(i as isize));
+                    tmp.push(*ptr.add(i));
                 }
                 let ptr = a.realloc(ptr, size, align, new_size);
                 assert!(!ptr.is_null());
                 for (i, byte) in tmp.iter().enumerate() {
-                    assert_eq!(*byte, *ptr.offset(i as isize));
+                    assert_eq!(*byte, *ptr.add(i));
                 }
                 ptrs.push((ptr, new_size, align));
             }
@@ -89,14 +89,14 @@ pub fn run(u: &mut Unstructured<'_>) -> Result<()> {
             };
             for i in 0..size {
                 if zero {
-                    assert_eq!(*ptr.offset(i as isize), 0);
+                    assert_eq!(*ptr.add(i), 0);
                 }
-                *ptr.offset(i as isize) = 0xce;
+                *ptr.add(i) = 0xce;
             }
             ptrs.push((ptr, size, align));
         }
 
-        // Deallocate everythign when we're done.
+        // Deallocate everything when we're done.
         for (ptr, size, align) in ptrs {
             a.free(ptr, size, align);
         }

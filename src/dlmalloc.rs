@@ -457,7 +457,7 @@ impl<A: Allocator> Dlmalloc<A> {
             return ret;
         }
 
-        return ptr::null_mut();
+        ptr::null_mut()
     }
 
     pub unsafe fn realloc(&mut self, oldmem: *mut u8, bytes: usize) -> *mut u8 {
@@ -477,7 +477,7 @@ impl<A: Allocator> Dlmalloc<A> {
             ptr::copy_nonoverlapping(oldmem, ptr, cmp::min(oc, bytes));
             self.free(oldmem);
         }
-        return ptr;
+        ptr
     }
 
     unsafe fn try_realloc_chunk(&mut self, p: *mut Chunk, nb: usize, can_move: bool) -> *mut Chunk {
@@ -530,7 +530,7 @@ impl<A: Allocator> Dlmalloc<A> {
                 self.dvsize = 0;
                 self.dv = ptr::null_mut();
             }
-            return p;
+            p
         } else if !Chunk::cinuse(next) {
             // extend into the next free chunk
             let nextsize = Chunk::size(next);
@@ -588,7 +588,7 @@ impl<A: Allocator> Dlmalloc<A> {
         self.footprint = self.footprint + newmmsize - oldmmsize;
         self.max_footprint = cmp::max(self.max_footprint, self.footprint);
         self.check_mmapped_chunk(newp);
-        return newp;
+        newp
     }
 
     fn mmap_align(&self, a: usize) -> usize {
@@ -657,10 +657,10 @@ impl<A: Allocator> Dlmalloc<A> {
         debug_assert!(Chunk::size(p) >= nb);
         debug_assert_eq!(align_up(mem as usize, alignment), mem as usize);
         self.check_inuse_chunk(p);
-        return mem;
+        mem
     }
 
-    // consolidate and bin a chunk, differs from exported versions of free
+    // Consolidate and bin a chunk, differs from exported versions of free
     // mainly in that the chunk need not be marked as inuse
     unsafe fn dispose_chunk(&mut self, mut p: *mut Chunk, mut psize: usize) {
         let next = Chunk::plus_offset(p, psize);
@@ -781,7 +781,7 @@ impl<A: Allocator> Dlmalloc<A> {
         let ret = Chunk::to_mem(p);
         self.check_malloced_chunk(ret, size);
         self.check_malloc_state();
-        return ret;
+        ret
     }
 
     // add a segment to hold a new noncontiguous region
@@ -948,7 +948,7 @@ impl<A: Allocator> Dlmalloc<A> {
         }
 
         // If dv is a better fit, then return null so malloc will use it
-        if v.is_null() || (self.dvsize >= size && !(rsize < self.dvsize - size)) {
+        if v.is_null() || (self.dvsize >= size && (rsize >= self.dvsize - size)) {
             return ptr::null_mut();
         }
 
@@ -1058,7 +1058,7 @@ impl<A: Allocator> Dlmalloc<A> {
             let mut k = size << leftshift_for_tree_index(idx);
             loop {
                 if Chunk::size(TreeChunk::chunk(t)) != size {
-                    let c = &mut (*t).child[(k >> mem::size_of::<usize>() * 8 - 1) & 1];
+                    let c = &mut (*t).child[(k >> (mem::size_of::<usize>() * 8 - 1)) & 1];
                     k <<= 1;
                     if !c.is_null() {
                         t = *c;
@@ -1298,21 +1298,21 @@ impl<A: Allocator> Dlmalloc<A> {
             pad += self.top_foot_size();
             if self.topsize > pad {
                 let unit = DEFAULT_GRANULARITY;
-                let extra = ((self.topsize - pad + unit - 1) / unit - 1) * unit;
+                let extra = ((self.topsize - pad).div_ceil(unit) - 1) * unit;
                 let sp = self.segment_holding(self.top.cast());
                 debug_assert!(!sp.is_null());
 
-                if !Segment::is_extern(sp) {
-                    if Segment::can_release_part(&self.system_allocator, sp) {
-                        if (*sp).size >= extra && !self.has_segment_link(sp) {
-                            let newsize = (*sp).size - extra;
-                            if self
-                                .system_allocator
-                                .free_part((*sp).base, (*sp).size, newsize)
-                            {
-                                released = extra;
-                            }
-                        }
+                if !Segment::is_extern(sp)
+                    && Segment::can_release_part(&self.system_allocator, sp)
+                    && (*sp).size >= extra
+                    && !self.has_segment_link(sp)
+                {
+                    let newsize = (*sp).size - extra;
+                    if self
+                        .system_allocator
+                        .free_part((*sp).base, (*sp).size, newsize)
+                    {
+                        released = extra;
                     }
                 }
 
@@ -1329,7 +1329,7 @@ impl<A: Allocator> Dlmalloc<A> {
             released += self.release_unused_segments();
 
             if released == 0 && self.topsize > self.trim_check {
-                self.trim_check = usize::max_value();
+                self.trim_check = usize::MAX;
             }
         }
 
@@ -1395,7 +1395,7 @@ impl<A: Allocator> Dlmalloc<A> {
         } else {
             MAX_RELEASE_CHECK_RATE
         };
-        return released;
+        released
     }
 
     // Sanity checks
