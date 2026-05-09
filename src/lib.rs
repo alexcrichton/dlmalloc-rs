@@ -218,4 +218,9 @@ impl<A: Allocator> Dlmalloc<A> {
     pub fn allocator_mut(&mut self) -> &mut A {
         self.0.allocator_mut()
     }
+
+    /// Provides access to the underlying C-style allocator
+    pub fn get_inner_mut(&mut self) -> &mut dlmalloc::Dlmalloc<A> {
+        &mut self.0
+    }
 }
