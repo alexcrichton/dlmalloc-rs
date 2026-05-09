@@ -40,6 +40,8 @@ pub struct Dlmalloc<A> {
     trim_check: usize,
     least_addr: *mut u8,
     release_checks: usize,
+    default_granularity: usize,
+    max_release_check_rate: usize,
     system_allocator: A,
 }
 unsafe impl<A: Send> Send for Dlmalloc<A> {}
@@ -54,9 +56,7 @@ const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
 
 // TODO: runtime configurable? documentation?
-const DEFAULT_GRANULARITY: usize = 64 * 1024;
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
-const MAX_RELEASE_CHECK_RATE: usize = 4095;
 
 #[repr(C)]
 struct Chunk {
@@ -127,6 +127,8 @@ impl<A> Dlmalloc<A> {
             trim_check: 0,
             least_addr: ptr::null_mut(),
             release_checks: 0,
+            default_granularity: 64 * 1024,
+            max_release_check_rate: 4095,
             system_allocator,
         }
     }
@@ -137,6 +139,14 @@ impl<A> Dlmalloc<A> {
 
     pub fn allocator_mut(&mut self) -> &mut A {
         &mut self.system_allocator
+    }
+
+    pub fn set_granularity(&mut self, granularity: usize) {
+        self.default_granularity = granularity;
+    }
+
+    pub fn set_max_release_check_rate(&mut self, rate: usize) {
+        self.max_release_check_rate = rate;
     }
 }
 
@@ -187,11 +197,11 @@ impl<A: Allocator> Dlmalloc<A> {
         //                                `max_request` will not be honored
         //   + self.top_foot_size()
         //   + self.malloc_alignment()
-        //   + DEFAULT_GRANULARITY
+        //   + self.default_granularity
         // ==
         //   usize::MAX
         let min_sys_alloc_space =
-            ((!0 - (DEFAULT_GRANULARITY + self.top_foot_size() + self.malloc_alignment()) + 1)
+            ((!0 - (self.default_granularity + self.top_foot_size() + self.malloc_alignment()) + 1)
                 & !self.malloc_alignment())
                 - self.chunk_overhead()
                 + 1;
@@ -386,7 +396,7 @@ impl<A: Allocator> Dlmalloc<A> {
         // keep in sync with max_request
         let asize = align_up(
             size + self.top_foot_size() + self.malloc_alignment(),
-            DEFAULT_GRANULARITY,
+            self.default_granularity,
         );
 
         let (tbase, tsize, flags) = self.system_allocator.alloc(asize);
@@ -404,7 +414,7 @@ impl<A: Allocator> Dlmalloc<A> {
             self.seg.base = tbase;
             self.seg.size = tsize;
             self.seg.flags = flags;
-            self.release_checks = MAX_RELEASE_CHECK_RATE;
+            self.release_checks = self.max_release_check_rate;
             self.init_bins();
             let tsize = tsize - self.top_foot_size();
             self.init_top(tbase.cast(), tsize);
@@ -562,7 +572,7 @@ impl<A: Allocator> Dlmalloc<A> {
         }
 
         // Keep the old chunk if it's big enough but not too big
-        if oldsize >= nb + mem::size_of::<usize>() && (oldsize - nb) <= (DEFAULT_GRANULARITY << 1) {
+        if oldsize >= nb + mem::size_of::<usize>() && (oldsize - nb) <= (self.default_granularity << 1) {
             return oldp;
         }
 
@@ -1297,7 +1307,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if pad < self.max_request() && !self.top.is_null() {
             pad += self.top_foot_size();
             if self.topsize > pad {
-                let unit = DEFAULT_GRANULARITY;
+                let unit = self.default_granularity;
                 let extra = ((self.topsize - pad + unit - 1) / unit - 1) * unit;
                 let sp = self.segment_holding(self.top.cast());
                 debug_assert!(!sp.is_null());
@@ -1390,10 +1400,10 @@ impl<A: Allocator> Dlmalloc<A> {
             pred = sp;
             sp = next;
         }
-        self.release_checks = if nsegs > MAX_RELEASE_CHECK_RATE {
+        self.release_checks = if nsegs > self.max_release_check_rate {
             nsegs
         } else {
-            MAX_RELEASE_CHECK_RATE
+            self.max_release_check_rate
         };
         return released;
     }
