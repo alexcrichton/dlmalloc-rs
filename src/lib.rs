@@ -103,10 +103,11 @@ impl Dlmalloc<System> {
     ///
     /// `granularity` must be non-zero and a power of two; violating this
     /// panics at const-evaluation time when called in a `const` context, or
-    /// at runtime otherwise. Additionally, for the value to be honored by the
-    /// underlying allocator's contract it should be at least the platform
-    /// page size — see [`Dlmalloc::set_granularity`] to validate at runtime
-    /// once an [`Allocator`] is available.
+    /// at runtime otherwise. This constructor performs no other validation:
+    /// in particular, it does NOT check that `granularity` is at least the
+    /// platform page size, because no [`Allocator`] is available in a `const`
+    /// context. Use [`Dlmalloc::set_granularity`] to apply the full runtime
+    /// validation (power-of-two AND >= page size).
     ///
     /// A `max_release_check_rate` of `0` disables the periodic
     /// release-unused-segments pass.
@@ -143,12 +144,13 @@ impl<A> Dlmalloc<A> {
         ))
     }
 
-    /// Sets the maximum number of free operations between periodic
+    /// Sets the maximum number of large-chunk frees between periodic
     /// release-unused-segments passes. A value of `0` disables the pass.
     ///
-    /// May be called at any time, though the new rate only takes effect after
-    /// the current countdown completes (except when disabling, which takes
-    /// effect immediately).
+    /// May be called at any time. The new rate takes effect immediately: the
+    /// active countdown is reseeded from the new value, so a disabled ->
+    /// enabled transition fires on the next free rather than after
+    /// `usize::MAX` decrements.
     pub fn set_max_release_check_rate(&mut self, rate: usize) {
         self.0.set_max_release_check_rate(rate);
     }
@@ -405,9 +407,10 @@ impl<A: Allocator> Dlmalloc<A> {
     ///
     /// Returns `true` if the value was accepted, `false` otherwise. To be
     /// accepted, `granularity` must be non-zero, a power of two, and at least
-    /// `page_size()` as reported by the underlying [`Allocator`]. This matches
-    /// the contract of `mallopt(M_GRANULARITY, ...)` in the original C
-    /// dlmalloc.
+    /// `page_size()` as reported by the underlying [`Allocator`]. This
+    /// roughly matches `mallopt(M_GRANULARITY, ...)` in the original C
+    /// dlmalloc, except that C rounds the value up to the page size while
+    /// this returns `false` for sub-page values.
     ///
     /// For best results call this before the first allocation; existing
     /// segments retain their original alignment.

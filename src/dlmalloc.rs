@@ -55,7 +55,8 @@ const TREEBIN_SHIFT: usize = 8;
 const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
 
-// TODO: runtime configurable?
+// TODO: runtime configurable? `DEFAULT_TRIM_THRESHOLD` is still hard-coded;
+// `granularity` and `max_release_check_rate` are configurable per-instance.
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
 
 #[repr(C)]
@@ -153,31 +154,17 @@ impl<A> Dlmalloc<A> {
         &mut self.system_allocator
     }
 
-    /// Sets the maximum number of free operations between release-unused-segment
-    /// passes. A value of `0` disables the periodic release check entirely.
+    /// Sets the maximum number of large-chunk frees between
+    /// release-unused-segment passes. A value of `0` disables the periodic
+    /// release check entirely.
+    ///
+    /// The new rate is applied immediately: the active countdown is reseeded
+    /// from the new value (or to `usize::MAX` when disabling). This ensures a
+    /// disabled -> enabled transition takes effect on the next free rather
+    /// than after `usize::MAX` decrements.
     pub fn set_max_release_check_rate(&mut self, rate: usize) {
         self.max_release_check_rate = rate;
-        if rate == 0 {
-            // Setting `release_checks` to `usize::MAX` makes the countdown in
-            // `dispose_chunk` effectively never reach zero, disabling the
-            // periodic pass without risking underflow.
-            self.release_checks = usize::MAX;
-        }
-    }
-}
-
-impl<A: Allocator> Dlmalloc<A> {
-    /// Sets the granularity used for system allocations. Returns `true` if the
-    /// value was accepted, `false` otherwise. To be accepted, `granularity`
-    /// must be non-zero, a power of two, and at least `page_size()` as reported
-    /// by the underlying [`Allocator`]. This matches the contract of
-    /// `mallopt(M_GRANULARITY, ...)` in the original C dlmalloc.
-    pub fn set_granularity(&mut self, granularity: usize) -> bool {
-        if !granularity.is_power_of_two() || granularity < self.system_allocator.page_size() {
-            return false;
-        }
-        self.granularity = granularity;
-        true
+        self.release_checks = self.release_check_target();
     }
 
     /// Returns the value to seed `release_checks` with. When the configured
@@ -189,6 +176,23 @@ impl<A: Allocator> Dlmalloc<A> {
         } else {
             self.max_release_check_rate
         }
+    }
+}
+
+impl<A: Allocator> Dlmalloc<A> {
+    /// Sets the granularity used for system allocations. Returns `true` if the
+    /// value was accepted, `false` otherwise. To be accepted, `granularity`
+    /// must be non-zero, a power of two, and at least `page_size()` as
+    /// reported by the underlying [`Allocator`]. This roughly matches
+    /// `mallopt(M_GRANULARITY, ...)` in the original C dlmalloc, except that
+    /// C rounds the value up to the page size while this returns `false` for
+    /// sub-page values.
+    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+        if !granularity.is_power_of_two() || granularity < self.system_allocator.page_size() {
+            return false;
+        }
+        self.granularity = granularity;
+        true
     }
 
     // TODO: can we get rid of this?
@@ -1938,6 +1942,143 @@ mod tests {
             setup_treemap(&mut a);
             let max_request_size = a.max_request() - 1;
             assert_eq!(a.malloc(max_request_size), ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn default_constructor_preserves_legacy_defaults() {
+        // Regression guard: `Dlmalloc::new` must keep the pre-config values so
+        // existing wasm32/Linux targets see no behavioral change.
+        let a = Dlmalloc::new(System::new());
+        assert_eq!(a.granularity, 64 * 1024);
+        assert_eq!(a.max_release_check_rate, 4095);
+    }
+
+    #[test]
+    fn new_with_config_sets_fields() {
+        let page = System::new().page_size();
+        let a = Dlmalloc::new_with_config(System::new(), page, 17);
+        assert_eq!(a.granularity, page);
+        assert_eq!(a.max_release_check_rate, 17);
+    }
+
+    #[test]
+    #[should_panic(expected = "granularity must be a non-zero power of two")]
+    fn new_with_config_rejects_non_power_of_two() {
+        let _ = Dlmalloc::new_with_config(System::new(), 3 * 1024, 4095);
+    }
+
+    #[test]
+    #[should_panic(expected = "granularity must be a non-zero power of two")]
+    fn new_with_config_rejects_zero_granularity() {
+        let _ = Dlmalloc::new_with_config(System::new(), 0, 4095);
+    }
+
+    #[test]
+    fn set_granularity_validates() {
+        let mut a = Dlmalloc::new(System::new());
+        let page = a.system_allocator.page_size();
+
+        // non-power-of-two rejected
+        assert!(!a.set_granularity(page + 1));
+        assert_eq!(a.granularity, 64 * 1024);
+
+        // sub-page rejected (pick a pow2 smaller than page_size)
+        assert!(page >= 2);
+        let sub_page = 1usize;
+        assert!(sub_page < page);
+        assert!(!a.set_granularity(sub_page));
+        assert_eq!(a.granularity, 64 * 1024);
+
+        // zero rejected (is_power_of_two(0) == false)
+        assert!(!a.set_granularity(0));
+
+        // page-sized pow2 accepted
+        assert!(a.set_granularity(page));
+        assert_eq!(a.granularity, page);
+
+        // larger pow2 accepted
+        assert!(a.set_granularity(2 * 64 * 1024));
+        assert_eq!(a.granularity, 2 * 64 * 1024);
+    }
+
+    #[test]
+    fn set_max_release_check_rate_zero_disables_countdown() {
+        let mut a = Dlmalloc::new(System::new());
+        a.set_max_release_check_rate(0);
+        assert_eq!(a.max_release_check_rate, 0);
+        assert_eq!(a.release_checks, usize::MAX);
+    }
+
+    // Regression test for the disabled -> enabled bug: prior to the fix, the
+    // setter only reseeded the countdown when transitioning to `0`, so a
+    // subsequent positive rate left `release_checks` at `usize::MAX` and the
+    // periodic pass effectively never fired again.
+    #[test]
+    fn set_max_release_check_rate_reenable_reseeds_countdown() {
+        let mut a = Dlmalloc::new(System::new());
+        a.set_max_release_check_rate(0);
+        assert_eq!(a.release_checks, usize::MAX);
+
+        a.set_max_release_check_rate(8);
+        assert_eq!(a.max_release_check_rate, 8);
+        assert_eq!(a.release_checks, 8);
+    }
+
+    #[test]
+    fn set_max_release_check_rate_updates_active_countdown() {
+        // The setter takes effect immediately even when going between two
+        // non-zero rates; this avoids a stale large countdown sticking around
+        // after the user lowers the rate.
+        let mut a = Dlmalloc::new(System::new());
+        assert_eq!(a.max_release_check_rate, 4095);
+        a.set_max_release_check_rate(2);
+        assert_eq!(a.max_release_check_rate, 2);
+        assert_eq!(a.release_checks, 2);
+    }
+
+    // End-to-end: drive enough large-chunk frees under a tiny release rate to
+    // tick the countdown to zero and trigger `release_unused_segments` from
+    // `dispose_chunk`. The test passes if the allocator stays consistent.
+    #[test]
+    #[cfg(not(miri))]
+    fn small_release_rate_drives_periodic_pass() {
+        let mut a = Dlmalloc::new_with_config(System::new(), 64 * 1024, 2);
+        let large = NSMALLBINS * (1 << SMALLBIN_SHIFT);
+        assert!(!a.is_small(large));
+        unsafe {
+            for _ in 0..32 {
+                let p1 = a.malloc(large);
+                let p2 = a.malloc(large);
+                assert!(!p1.is_null());
+                assert!(!p2.is_null());
+                a.free(p1);
+                a.free(p2);
+            }
+        }
+    }
+
+    // End-to-end: small custom granularity (page-sized) survives a basic
+    // workload. This is the embedded-target use case the configurable
+    // granularity was added for.
+    #[test]
+    #[cfg(not(miri))]
+    fn custom_small_granularity_alloc_free() {
+        let page = System::new().page_size();
+        let mut a = Dlmalloc::new_with_config(System::new(), page, 4095);
+        assert_eq!(a.granularity, page);
+        unsafe {
+            let mut ptrs = [ptr::null_mut::<u8>(); 16];
+            for (i, slot) in ptrs.iter_mut().enumerate() {
+                let p = a.malloc(64 + i * 7);
+                assert!(!p.is_null());
+                *p = i as u8;
+                *slot = p;
+            }
+            for (i, &p) in ptrs.iter().enumerate() {
+                assert_eq!(*p, i as u8);
+                a.free(p);
+            }
         }
     }
 }

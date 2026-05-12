@@ -177,3 +177,36 @@ fn stress() {
         let _ = fuzz::run(&mut u);
     }
 }
+
+// Exercises the public configuration API (`new_with_config`,
+// `set_max_release_check_rate`, `set_granularity`) end-to-end through the
+// `Dlmalloc<System>` wrapper.
+#[test]
+fn configurable_api_smoke() {
+    // Construct with a non-default granularity and a tiny release rate so the
+    // periodic release pass exercises during the workload.
+    let mut a = Dlmalloc::new_with_config(64 * 1024, 4);
+
+    // Disable, then re-enable: with the bug present this would leave the
+    // countdown stuck at usize::MAX and the rate change silently ignored.
+    a.set_max_release_check_rate(0);
+    a.set_max_release_check_rate(4);
+
+    unsafe {
+        // A few rounds of large-chunk alloc/free to tick the release
+        // countdown to zero and trip the periodic pass.
+        for _ in 0..16 {
+            let p1 = a.malloc(4096, 8);
+            let p2 = a.malloc(4096, 8);
+            assert!(!p1.is_null());
+            assert!(!p2.is_null());
+            a.free(p1, 4096, 8);
+            a.free(p2, 4096, 8);
+        }
+    }
+
+    // set_granularity rejects invalid values and accepts valid ones.
+    assert!(!a.set_granularity(0));
+    assert!(!a.set_granularity(64 * 1024 + 1));
+    assert!(a.set_granularity(64 * 1024));
+}
