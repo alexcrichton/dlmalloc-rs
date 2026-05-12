@@ -55,9 +55,15 @@ const TREEBIN_SHIFT: usize = 8;
 const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
 
-// TODO: runtime configurable? `DEFAULT_TRIM_THRESHOLD` is still hard-coded;
-// `granularity` and `max_release_check_rate` are configurable per-instance.
+// `DEFAULT_TRIM_THRESHOLD` is still hard-coded; `granularity` and
+// `max_release_check_rate` are configurable per-instance.
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
+
+// Minimum legal granularity. Smaller values would let `sys_trim` compute
+// a non-`malloc_alignment`-aligned residual `topsize`, which corrupts the
+// flag bits packed into the top chunk's size encoding. Kept equal to the
+// runtime `malloc_alignment()` so chunk math stays sound.
+const MIN_GRANULARITY: usize = 2 * mem::size_of::<usize>();
 
 #[repr(C)]
 struct Chunk {
@@ -117,8 +123,8 @@ impl<A> Dlmalloc<A> {
         max_release_check_rate: usize,
     ) -> Dlmalloc<A> {
         assert!(
-            granularity.is_power_of_two(),
-            "granularity must be a non-zero power of two",
+            granularity.is_power_of_two() && granularity >= MIN_GRANULARITY,
+            "granularity must be a power of two and at least 2 * size_of::<usize>()",
         );
         Dlmalloc {
             smallmap: 0,
@@ -167,6 +173,31 @@ impl<A> Dlmalloc<A> {
         self.release_checks = self.release_check_target();
     }
 
+    /// Sets the granularity used for system allocations.
+    ///
+    /// Returns `true` if the value was accepted, `false` otherwise. To be
+    /// accepted, `granularity` must be a power of two and at least
+    /// `2 * size_of::<usize>()` (the malloc alignment); smaller values are
+    /// rejected because they would corrupt the flag bits packed into the
+    /// top chunk's size encoding during `trim`.
+    ///
+    /// Unlike C dlmalloc's `mallopt(M_GRANULARITY, ...)`, which rejects
+    /// sub-page values, this accepts any pow-of-two >= the malloc alignment.
+    /// That intentionally permits sub-page granularity for embedded targets
+    /// (e.g., Trusty TEE) that need tightly-packed allocations on small
+    /// heaps; the underlying system allocator may still round individual
+    /// requests up to its page size.
+    ///
+    /// For best results call this before the first allocation; existing
+    /// segments retain their original alignment.
+    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+        if !granularity.is_power_of_two() || granularity < MIN_GRANULARITY {
+            return false;
+        }
+        self.granularity = granularity;
+        true
+    }
+
     /// Returns the value to seed `release_checks` with. When the configured
     /// rate is zero the periodic release pass is disabled by using
     /// `usize::MAX` so the countdown never reaches zero.
@@ -180,21 +211,6 @@ impl<A> Dlmalloc<A> {
 }
 
 impl<A: Allocator> Dlmalloc<A> {
-    /// Sets the granularity used for system allocations. Returns `true` if the
-    /// value was accepted, `false` otherwise. To be accepted, `granularity`
-    /// must be non-zero, a power of two, and at least `page_size()` as
-    /// reported by the underlying [`Allocator`]. This roughly matches
-    /// `mallopt(M_GRANULARITY, ...)` in the original C dlmalloc, except that
-    /// C rounds the value up to the page size while this returns `false` for
-    /// sub-page values.
-    pub fn set_granularity(&mut self, granularity: usize) -> bool {
-        if !granularity.is_power_of_two() || granularity < self.system_allocator.page_size() {
-            return false;
-        }
-        self.granularity = granularity;
-        true
-    }
-
     // TODO: can we get rid of this?
     pub fn malloc_alignment(&self) -> usize {
         mem::size_of::<usize>() * 2
@@ -1963,35 +1979,53 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "granularity must be a non-zero power of two")]
+    #[should_panic(expected = "granularity must be a power of two")]
     fn new_with_config_rejects_non_power_of_two() {
         let _ = Dlmalloc::new_with_config(System::new(), 3 * 1024, 4095);
     }
 
     #[test]
-    #[should_panic(expected = "granularity must be a non-zero power of two")]
+    #[should_panic(expected = "granularity must be a power of two")]
     fn new_with_config_rejects_zero_granularity() {
         let _ = Dlmalloc::new_with_config(System::new(), 0, 4095);
+    }
+
+    // Below `MIN_GRANULARITY` (i.e. `malloc_alignment`) the trim math at
+    // `sys_trim` would leave a non-aligned residual `topsize` and corrupt
+    // chunk flag bits, so the const constructor rejects such values too.
+    #[test]
+    #[should_panic(expected = "granularity must be a power of two")]
+    fn new_with_config_rejects_below_min_alignment() {
+        let too_small = MIN_GRANULARITY / 2;
+        let _ = Dlmalloc::new_with_config(System::new(), too_small, 4095);
     }
 
     #[test]
     fn set_granularity_validates() {
         let mut a = Dlmalloc::new(System::new());
-        let page = a.system_allocator.page_size();
 
         // non-power-of-two rejected
-        assert!(!a.set_granularity(page + 1));
-        assert_eq!(a.granularity, 64 * 1024);
-
-        // sub-page rejected (pick a pow2 smaller than page_size)
-        assert!(page >= 2);
-        let sub_page = 1usize;
-        assert!(sub_page < page);
-        assert!(!a.set_granularity(sub_page));
+        assert!(!a.set_granularity(3 * 1024));
         assert_eq!(a.granularity, 64 * 1024);
 
         // zero rejected (is_power_of_two(0) == false)
         assert!(!a.set_granularity(0));
+        assert_eq!(a.granularity, 64 * 1024);
+
+        // below malloc_alignment rejected
+        assert!(!a.set_granularity(MIN_GRANULARITY / 2));
+        assert_eq!(a.granularity, 64 * 1024);
+
+        // exactly malloc_alignment accepted (the smallest legal value)
+        assert!(a.set_granularity(MIN_GRANULARITY));
+        assert_eq!(a.granularity, MIN_GRANULARITY);
+
+        // sub-page but >= malloc_alignment accepted (the embedded use case)
+        let page = a.system_allocator.page_size();
+        let sub_page = MIN_GRANULARITY * 2;
+        assert!(sub_page < page);
+        assert!(a.set_granularity(sub_page));
+        assert_eq!(a.granularity, sub_page);
 
         // page-sized pow2 accepted
         assert!(a.set_granularity(page));
@@ -2058,15 +2092,39 @@ mod tests {
         }
     }
 
-    // End-to-end: small custom granularity (page-sized) survives a basic
-    // workload. This is the embedded-target use case the configurable
-    // granularity was added for.
+    // End-to-end: page-sized custom granularity survives a basic workload.
     #[test]
     #[cfg(not(miri))]
-    fn custom_small_granularity_alloc_free() {
+    fn custom_page_granularity_alloc_free() {
         let page = System::new().page_size();
         let mut a = Dlmalloc::new_with_config(System::new(), page, 4095);
         assert_eq!(a.granularity, page);
+        unsafe {
+            let mut ptrs = [ptr::null_mut::<u8>(); 16];
+            for (i, slot) in ptrs.iter_mut().enumerate() {
+                let p = a.malloc(64 + i * 7);
+                assert!(!p.is_null());
+                *p = i as u8;
+                *slot = p;
+            }
+            for (i, &p) in ptrs.iter().enumerate() {
+                assert_eq!(*p, i as u8);
+                a.free(p);
+            }
+        }
+    }
+
+    // End-to-end: sub-page granularity (the embedded-target use case the
+    // configurable granularity was added for). The system allocator may
+    // still round individual requests up to its page size, but dlmalloc
+    // itself must remain consistent.
+    #[test]
+    #[cfg(not(miri))]
+    fn custom_sub_page_granularity_alloc_free() {
+        let sub_page = MIN_GRANULARITY * 2;
+        assert!(sub_page < System::new().page_size());
+        let mut a = Dlmalloc::new_with_config(System::new(), sub_page, 4095);
+        assert_eq!(a.granularity, sub_page);
         unsafe {
             let mut ptrs = [ptr::null_mut::<u8>(); 16];
             for (i, slot) in ptrs.iter_mut().enumerate() {

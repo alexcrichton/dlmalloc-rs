@@ -101,13 +101,11 @@ impl Dlmalloc<System> {
     /// Creates a new instance with a custom system-allocation `granularity`
     /// (in bytes) and `max_release_check_rate`.
     ///
-    /// `granularity` must be non-zero and a power of two; violating this
-    /// panics at const-evaluation time when called in a `const` context, or
-    /// at runtime otherwise. This constructor performs no other validation:
-    /// in particular, it does NOT check that `granularity` is at least the
-    /// platform page size, because no [`Allocator`] is available in a `const`
-    /// context. Use [`Dlmalloc::set_granularity`] to apply the full runtime
-    /// validation (power-of-two AND >= page size).
+    /// `granularity` must be a power of two and at least
+    /// `2 * size_of::<usize>()` (the malloc alignment); violating this panics
+    /// at const-evaluation time when called in a `const` context, or at
+    /// runtime otherwise. Sub-page granularity is permitted on purpose to
+    /// support embedded targets that need tightly-packed allocations.
     ///
     /// A `max_release_check_rate` of `0` disables the periodic
     /// release-unused-segments pass.
@@ -153,6 +151,25 @@ impl<A> Dlmalloc<A> {
     /// `usize::MAX` decrements.
     pub fn set_max_release_check_rate(&mut self, rate: usize) {
         self.0.set_max_release_check_rate(rate);
+    }
+
+    /// Sets the granularity used for system allocations.
+    ///
+    /// Returns `true` if the value was accepted, `false` otherwise. To be
+    /// accepted, `granularity` must be a power of two and at least
+    /// `2 * size_of::<usize>()` (the malloc alignment); smaller values are
+    /// rejected because they would break the chunk size/flag-bit invariants
+    /// during `trim`.
+    ///
+    /// Unlike C dlmalloc's `mallopt(M_GRANULARITY, ...)`, which rejects
+    /// sub-page values, this accepts any pow-of-two >= the malloc alignment.
+    /// Sub-page granularity is intentionally allowed for embedded targets
+    /// that need tightly-packed allocations.
+    ///
+    /// For best results call this before the first allocation; existing
+    /// segments retain their original alignment.
+    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+        self.0.set_granularity(granularity)
     }
 }
 
@@ -401,20 +418,5 @@ impl<A: Allocator> Dlmalloc<A> {
             return;
         }
         self.0.free(ptr)
-    }
-
-    /// Sets the granularity used for system allocations.
-    ///
-    /// Returns `true` if the value was accepted, `false` otherwise. To be
-    /// accepted, `granularity` must be non-zero, a power of two, and at least
-    /// `page_size()` as reported by the underlying [`Allocator`]. This
-    /// roughly matches `mallopt(M_GRANULARITY, ...)` in the original C
-    /// dlmalloc, except that C rounds the value up to the page size while
-    /// this returns `false` for sub-page values.
-    ///
-    /// For best results call this before the first allocation; existing
-    /// segments retain their original alignment.
-    pub fn set_granularity(&mut self, granularity: usize) -> bool {
-        self.0.set_granularity(granularity)
     }
 }

@@ -205,8 +205,35 @@ fn configurable_api_smoke() {
         }
     }
 
-    // set_granularity rejects invalid values and accepts valid ones.
+    // set_granularity rejects invalid values and accepts valid ones,
+    // including sub-page values down to `2 * size_of::<usize>()`.
     assert!(!a.set_granularity(0));
     assert!(!a.set_granularity(64 * 1024 + 1));
+    assert!(!a.set_granularity(core::mem::size_of::<usize>())); // below malloc_alignment
+    assert!(a.set_granularity(2 * core::mem::size_of::<usize>())); // exactly malloc_alignment
     assert!(a.set_granularity(64 * 1024));
+}
+
+// Sub-page granularity end-to-end through the public API. The system
+// allocator on Linux/macOS will round each request up to its page size,
+// so this primarily exercises the dlmalloc-side accounting; on the
+// embedded targets this PR is motivated by, it also packs allocations
+// tightly into the application heap.
+#[test]
+fn sub_page_granularity_alloc_free() {
+    let sub_page = 4 * core::mem::size_of::<usize>();
+    let mut a = Dlmalloc::new_with_config(sub_page, 4095);
+    unsafe {
+        let mut ptrs = [core::ptr::null_mut::<u8>(); 8];
+        for (i, slot) in ptrs.iter_mut().enumerate() {
+            let p = a.malloc(32 + i * 5, 8);
+            assert!(!p.is_null());
+            *p = i as u8;
+            *slot = p;
+        }
+        for (i, &p) in ptrs.iter().enumerate() {
+            assert_eq!(*p, i as u8);
+            a.free(p, 32 + i * 5, 8);
+        }
+    }
 }
