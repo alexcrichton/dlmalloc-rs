@@ -225,7 +225,7 @@ impl<A: Allocator> Dlmalloc<A> {
     /// alignment information. Returned memory is aligned to at least
     /// `2 * size_of::<usize>()` (matching what the C `dlmalloc` implementation
     /// guarantees for `malloc`). If a larger alignment is required, use
-    /// [`Dlmalloc::malloc`] instead.
+    /// [`Dlmalloc::memalign_no_layout`] instead.
     ///
     /// Returns a null pointer if allocation fails.
     ///
@@ -241,11 +241,38 @@ impl<A: Allocator> Dlmalloc<A> {
         self.0.malloc(size)
     }
 
+    /// Allocates `size` bytes aligned to at least `align` bytes.
+    ///
+    /// Intended for wrapping the C `memalign` / `posix_memalign` ABIs. If
+    /// `align` is less than or equal to the allocator's natural alignment
+    /// (currently `2 * size_of::<usize>()`) this falls back to a regular
+    /// allocation; otherwise the result is aligned to `align`.
+    ///
+    /// Returns a null pointer if allocation fails.
+    ///
+    /// # Safety
+    ///
+    /// `align` must be a power of two. Pointers returned by this method
+    /// carry the same constraints as those returned by
+    /// [`Dlmalloc::malloc_no_layout`]: they must be released with
+    /// [`Dlmalloc::free_no_layout`] or resized with
+    /// [`Dlmalloc::realloc_no_layout`], and must not be passed to
+    /// [`Dlmalloc::free`] or [`Dlmalloc::realloc`].
+    #[inline]
+    pub unsafe fn memalign_no_layout(&mut self, align: usize, size: usize) -> *mut u8 {
+        if align <= self.0.malloc_alignment() {
+            self.0.malloc(size)
+        } else {
+            self.0.memalign(align, size)
+        }
+    }
+
     /// Reallocates `ptr` to `new_size` bytes without layout information.
     ///
-    /// Intended for wrapping the C `realloc(void *, size_t)` ABI. `ptr` must
-    /// have been obtained from [`Dlmalloc::malloc_no_layout`] or a previous
-    /// call to this method.
+    /// Intended for wrapping the C `realloc(void *, size_t)` ABI. If `ptr` is
+    /// null this behaves like [`Dlmalloc::malloc_no_layout`]. Otherwise `ptr`
+    /// must have been obtained from [`Dlmalloc::malloc_no_layout`],
+    /// [`Dlmalloc::memalign_no_layout`], or a previous call to this method.
     ///
     /// Returns a null pointer if the memory couldn't be reallocated, in which
     /// case `ptr` is still valid. Returns a valid pointer and frees `ptr` on
@@ -253,26 +280,33 @@ impl<A: Allocator> Dlmalloc<A> {
     ///
     /// # Safety
     ///
-    /// `ptr` must originate from a layout-free allocation made by this same
-    /// allocator. The resulting pointer carries the same constraints as one
-    /// returned by [`Dlmalloc::malloc_no_layout`].
+    /// If non-null, `ptr` must originate from a layout-free allocation made
+    /// by this same allocator. The resulting pointer carries the same
+    /// constraints as one returned by [`Dlmalloc::malloc_no_layout`].
     #[inline]
     pub unsafe fn realloc_no_layout(&mut self, ptr: *mut u8, new_size: usize) -> *mut u8 {
+        if ptr.is_null() {
+            return self.0.malloc(new_size);
+        }
         self.0.realloc(ptr, new_size)
     }
 
     /// Frees `ptr` without layout information.
     ///
-    /// Intended for wrapping the C `free(void *)` ABI. `ptr` must have been
-    /// obtained from [`Dlmalloc::malloc_no_layout`] or
+    /// Intended for wrapping the C `free(void *)` ABI. A null `ptr` is a
+    /// no-op. Otherwise `ptr` must have been obtained from
+    /// [`Dlmalloc::malloc_no_layout`], [`Dlmalloc::memalign_no_layout`], or
     /// [`Dlmalloc::realloc_no_layout`].
     ///
     /// # Safety
     ///
-    /// `ptr` must originate from a layout-free allocation made by this same
-    /// allocator and must not have been freed already.
+    /// If non-null, `ptr` must originate from a layout-free allocation made
+    /// by this same allocator and must not have been freed already.
     #[inline]
     pub unsafe fn free_no_layout(&mut self, ptr: *mut u8) {
+        if ptr.is_null() {
+            return;
+        }
         self.0.free(ptr)
     }
 }

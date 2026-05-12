@@ -38,7 +38,55 @@ fn no_layout_round_trip() {
         grown.add(32).write_bytes(0xcd, 96);
         assert_eq!(*grown.add(127), 0xcd);
 
-        a.free_no_layout(grown);
+        let shrunk = a.realloc_no_layout(grown, 16);
+        assert!(!shrunk.is_null());
+        for i in 0..16 {
+            assert_eq!(*shrunk.add(i), 0xab);
+        }
+
+        a.free_no_layout(shrunk);
+    }
+}
+
+#[test]
+fn no_layout_null_handling() {
+    let mut a = Dlmalloc::new();
+    unsafe {
+        a.free_no_layout(core::ptr::null_mut());
+
+        let ptr = a.realloc_no_layout(core::ptr::null_mut(), 64);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0x5a, 64);
+        assert_eq!(*ptr, 0x5a);
+        assert_eq!(*ptr.add(63), 0x5a);
+        a.free_no_layout(ptr);
+    }
+}
+
+#[test]
+fn memalign_no_layout_round_trip() {
+    let mut a = Dlmalloc::new();
+    unsafe {
+        for &align in &[1usize, 2, 8, 16, 32, 64, 256, 4096] {
+            let ptr = a.memalign_no_layout(align, 96);
+            assert!(!ptr.is_null(), "memalign_no_layout({align}, 96) failed");
+            assert_eq!(
+                (ptr as usize) & (align - 1),
+                0,
+                "ptr {ptr:p} not aligned to {align}"
+            );
+            ptr.write_bytes(0x77, 96);
+            assert_eq!(*ptr, 0x77);
+            assert_eq!(*ptr.add(95), 0x77);
+
+            let grown = a.realloc_no_layout(ptr, 256);
+            assert!(!grown.is_null());
+            for i in 0..96 {
+                assert_eq!(*grown.add(i), 0x77);
+            }
+
+            a.free_no_layout(grown);
+        }
     }
 }
 
