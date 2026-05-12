@@ -20,6 +20,28 @@ fn smoke() {
     }
 }
 
+#[test]
+fn no_layout_round_trip() {
+    let mut a = Dlmalloc::new();
+    unsafe {
+        let ptr = a.malloc_no_layout(32);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0xab, 32);
+        assert_eq!(*ptr, 0xab);
+        assert_eq!(*ptr.add(31), 0xab);
+
+        let grown = a.realloc_no_layout(ptr, 128);
+        assert!(!grown.is_null());
+        for i in 0..32 {
+            assert_eq!(*grown.add(i), 0xab);
+        }
+        grown.add(32).write_bytes(0xcd, 96);
+        assert_eq!(*grown.add(127), 0xcd);
+
+        a.free_no_layout(grown);
+    }
+}
+
 #[path = "../fuzz/src/lib.rs"]
 mod fuzz;
 
