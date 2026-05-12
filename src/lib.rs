@@ -219,8 +219,60 @@ impl<A: Allocator> Dlmalloc<A> {
         self.0.allocator_mut()
     }
 
-    /// Provides access to the underlying C-style allocator
-    pub fn get_inner_mut(&mut self) -> &mut dlmalloc::Dlmalloc<A> {
-        &mut self.0
+    /// Allocates `size` bytes with the allocator's natural alignment.
+    ///
+    /// Intended for wrapping the C `malloc(size_t)` ABI, which does not carry
+    /// alignment information. Returned memory is aligned to at least
+    /// `2 * size_of::<usize>()` (matching what the C `dlmalloc` implementation
+    /// guarantees for `malloc`). If a larger alignment is required, use
+    /// [`Dlmalloc::malloc`] instead.
+    ///
+    /// Returns a null pointer if allocation fails.
+    ///
+    /// # Safety
+    ///
+    /// Pointers returned by this method must be released with
+    /// [`Dlmalloc::free_no_layout`] or resized with
+    /// [`Dlmalloc::realloc_no_layout`]. They must not be passed to
+    /// [`Dlmalloc::free`] or [`Dlmalloc::realloc`], which assume layout
+    /// information that this method does not record.
+    #[inline]
+    pub unsafe fn malloc_no_layout(&mut self, size: usize) -> *mut u8 {
+        self.0.malloc(size)
+    }
+
+    /// Reallocates `ptr` to `new_size` bytes without layout information.
+    ///
+    /// Intended for wrapping the C `realloc(void *, size_t)` ABI. `ptr` must
+    /// have been obtained from [`Dlmalloc::malloc_no_layout`] or a previous
+    /// call to this method.
+    ///
+    /// Returns a null pointer if the memory couldn't be reallocated, in which
+    /// case `ptr` is still valid. Returns a valid pointer and frees `ptr` on
+    /// success.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must originate from a layout-free allocation made by this same
+    /// allocator. The resulting pointer carries the same constraints as one
+    /// returned by [`Dlmalloc::malloc_no_layout`].
+    #[inline]
+    pub unsafe fn realloc_no_layout(&mut self, ptr: *mut u8, new_size: usize) -> *mut u8 {
+        self.0.realloc(ptr, new_size)
+    }
+
+    /// Frees `ptr` without layout information.
+    ///
+    /// Intended for wrapping the C `free(void *)` ABI. `ptr` must have been
+    /// obtained from [`Dlmalloc::malloc_no_layout`] or
+    /// [`Dlmalloc::realloc_no_layout`].
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must originate from a layout-free allocation made by this same
+    /// allocator and must not have been freed already.
+    #[inline]
+    pub unsafe fn free_no_layout(&mut self, ptr: *mut u8) {
+        self.0.free(ptr)
     }
 }
