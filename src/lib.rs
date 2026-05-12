@@ -97,12 +97,60 @@ impl Dlmalloc<System> {
     pub const fn new() -> Dlmalloc<System> {
         Dlmalloc(dlmalloc::Dlmalloc::new(System::new()))
     }
+
+    /// Creates a new instance with a custom system-allocation `granularity`
+    /// (in bytes) and `max_release_check_rate`.
+    ///
+    /// `granularity` must be non-zero and a power of two; violating this
+    /// panics at const-evaluation time when called in a `const` context, or
+    /// at runtime otherwise. Additionally, for the value to be honored by the
+    /// underlying allocator's contract it should be at least the platform
+    /// page size — see [`Dlmalloc::set_granularity`] to validate at runtime
+    /// once an [`Allocator`] is available.
+    ///
+    /// A `max_release_check_rate` of `0` disables the periodic
+    /// release-unused-segments pass.
+    pub const fn new_with_config(
+        granularity: usize,
+        max_release_check_rate: usize,
+    ) -> Dlmalloc<System> {
+        Dlmalloc(dlmalloc::Dlmalloc::new_with_config(
+            System::new(),
+            granularity,
+            max_release_check_rate,
+        ))
+    }
 }
 
 impl<A> Dlmalloc<A> {
     /// Creates a new instance of an allocator
     pub const fn new_with_allocator(sys_allocator: A) -> Dlmalloc<A> {
         Dlmalloc(dlmalloc::Dlmalloc::new(sys_allocator))
+    }
+
+    /// Creates a new instance with the given system allocator, custom
+    /// `granularity` (in bytes), and `max_release_check_rate`. See
+    /// [`Dlmalloc::new_with_config`] for the contract on these values.
+    pub const fn new_with_allocator_and_config(
+        sys_allocator: A,
+        granularity: usize,
+        max_release_check_rate: usize,
+    ) -> Dlmalloc<A> {
+        Dlmalloc(dlmalloc::Dlmalloc::new_with_config(
+            sys_allocator,
+            granularity,
+            max_release_check_rate,
+        ))
+    }
+
+    /// Sets the maximum number of free operations between periodic
+    /// release-unused-segments passes. A value of `0` disables the pass.
+    ///
+    /// May be called at any time, though the new rate only takes effect after
+    /// the current countdown completes (except when disabling, which takes
+    /// effect immediately).
+    pub fn set_max_release_check_rate(&mut self, rate: usize) {
+        self.0.set_max_release_check_rate(rate);
     }
 }
 
@@ -351,5 +399,19 @@ impl<A: Allocator> Dlmalloc<A> {
             return;
         }
         self.0.free(ptr)
+    }
+
+    /// Sets the granularity used for system allocations.
+    ///
+    /// Returns `true` if the value was accepted, `false` otherwise. To be
+    /// accepted, `granularity` must be non-zero, a power of two, and at least
+    /// `page_size()` as reported by the underlying [`Allocator`]. This matches
+    /// the contract of `mallopt(M_GRANULARITY, ...)` in the original C
+    /// dlmalloc.
+    ///
+    /// For best results call this before the first allocation; existing
+    /// segments retain their original alignment.
+    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+        self.0.set_granularity(granularity)
     }
 }

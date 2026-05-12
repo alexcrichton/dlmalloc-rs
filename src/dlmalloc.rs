@@ -40,7 +40,7 @@ pub struct Dlmalloc<A> {
     trim_check: usize,
     least_addr: *mut u8,
     release_checks: usize,
-    default_granularity: usize,
+    granularity: usize,
     max_release_check_rate: usize,
     system_allocator: A,
 }
@@ -55,7 +55,7 @@ const TREEBIN_SHIFT: usize = 8;
 const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
 
-// TODO: runtime configurable? documentation?
+// TODO: runtime configurable?
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
 
 #[repr(C)]
@@ -107,6 +107,18 @@ fn leftshift_for_tree_index(x: u32) -> u32 {
 
 impl<A> Dlmalloc<A> {
     pub const fn new(system_allocator: A) -> Dlmalloc<A> {
+        Dlmalloc::new_with_config(system_allocator, 64 * 1024, 4095)
+    }
+
+    pub const fn new_with_config(
+        system_allocator: A,
+        granularity: usize,
+        max_release_check_rate: usize,
+    ) -> Dlmalloc<A> {
+        assert!(
+            granularity.is_power_of_two(),
+            "granularity must be a non-zero power of two",
+        );
         Dlmalloc {
             smallmap: 0,
             treemap: 0,
@@ -127,8 +139,8 @@ impl<A> Dlmalloc<A> {
             trim_check: 0,
             least_addr: ptr::null_mut(),
             release_checks: 0,
-            default_granularity: 64 * 1024,
-            max_release_check_rate: 4095,
+            granularity,
+            max_release_check_rate,
             system_allocator,
         }
     }
@@ -141,16 +153,44 @@ impl<A> Dlmalloc<A> {
         &mut self.system_allocator
     }
 
-    pub fn set_granularity(&mut self, granularity: usize) {
-        self.default_granularity = granularity;
-    }
-
+    /// Sets the maximum number of free operations between release-unused-segment
+    /// passes. A value of `0` disables the periodic release check entirely.
     pub fn set_max_release_check_rate(&mut self, rate: usize) {
         self.max_release_check_rate = rate;
+        if rate == 0 {
+            // Setting `release_checks` to `usize::MAX` makes the countdown in
+            // `dispose_chunk` effectively never reach zero, disabling the
+            // periodic pass without risking underflow.
+            self.release_checks = usize::MAX;
+        }
     }
 }
 
 impl<A: Allocator> Dlmalloc<A> {
+    /// Sets the granularity used for system allocations. Returns `true` if the
+    /// value was accepted, `false` otherwise. To be accepted, `granularity`
+    /// must be non-zero, a power of two, and at least `page_size()` as reported
+    /// by the underlying [`Allocator`]. This matches the contract of
+    /// `mallopt(M_GRANULARITY, ...)` in the original C dlmalloc.
+    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+        if !granularity.is_power_of_two() || granularity < self.system_allocator.page_size() {
+            return false;
+        }
+        self.granularity = granularity;
+        true
+    }
+
+    /// Returns the value to seed `release_checks` with. When the configured
+    /// rate is zero the periodic release pass is disabled by using
+    /// `usize::MAX` so the countdown never reaches zero.
+    fn release_check_target(&self) -> usize {
+        if self.max_release_check_rate == 0 {
+            usize::MAX
+        } else {
+            self.max_release_check_rate
+        }
+    }
+
     // TODO: can we get rid of this?
     pub fn malloc_alignment(&self) -> usize {
         mem::size_of::<usize>() * 2
@@ -197,11 +237,11 @@ impl<A: Allocator> Dlmalloc<A> {
         //                                `max_request` will not be honored
         //   + self.top_foot_size()
         //   + self.malloc_alignment()
-        //   + self.default_granularity
+        //   + self.granularity
         // ==
         //   usize::MAX
         let min_sys_alloc_space =
-            ((!0 - (self.default_granularity + self.top_foot_size() + self.malloc_alignment()) + 1)
+            ((!0 - (self.granularity + self.top_foot_size() + self.malloc_alignment()) + 1)
                 & !self.malloc_alignment())
                 - self.chunk_overhead()
                 + 1;
@@ -396,7 +436,7 @@ impl<A: Allocator> Dlmalloc<A> {
         // keep in sync with max_request
         let asize = align_up(
             size + self.top_foot_size() + self.malloc_alignment(),
-            self.default_granularity,
+            self.granularity,
         );
 
         let (tbase, tsize, flags) = self.system_allocator.alloc(asize);
@@ -414,7 +454,7 @@ impl<A: Allocator> Dlmalloc<A> {
             self.seg.base = tbase;
             self.seg.size = tsize;
             self.seg.flags = flags;
-            self.release_checks = self.max_release_check_rate;
+            self.release_checks = self.release_check_target();
             self.init_bins();
             let tsize = tsize - self.top_foot_size();
             self.init_top(tbase.cast(), tsize);
@@ -572,7 +612,7 @@ impl<A: Allocator> Dlmalloc<A> {
         }
 
         // Keep the old chunk if it's big enough but not too big
-        if oldsize >= nb + mem::size_of::<usize>() && (oldsize - nb) <= (self.default_granularity << 1) {
+        if oldsize >= nb + mem::size_of::<usize>() && (oldsize - nb) <= (self.granularity << 1) {
             return oldp;
         }
 
@@ -1307,7 +1347,7 @@ impl<A: Allocator> Dlmalloc<A> {
         if pad < self.max_request() && !self.top.is_null() {
             pad += self.top_foot_size();
             if self.topsize > pad {
-                let unit = self.default_granularity;
+                let unit = self.granularity;
                 let extra = ((self.topsize - pad + unit - 1) / unit - 1) * unit;
                 let sp = self.segment_holding(self.top.cast());
                 debug_assert!(!sp.is_null());
@@ -1400,11 +1440,7 @@ impl<A: Allocator> Dlmalloc<A> {
             pred = sp;
             sp = next;
         }
-        self.release_checks = if nsegs > self.max_release_check_rate {
-            nsegs
-        } else {
-            self.max_release_check_rate
-        };
+        self.release_checks = cmp::max(nsegs, self.release_check_target());
         return released;
     }
 
