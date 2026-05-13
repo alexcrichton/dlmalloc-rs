@@ -20,6 +20,7 @@ use core::cmp;
 use core::ptr;
 use sys::System;
 
+pub use self::dlmalloc::DlmallocConfig;
 #[cfg(feature = "global")]
 pub use self::global::{enable_alloc_after_fork, GlobalDlmalloc};
 
@@ -94,15 +95,20 @@ cfg_if::cfg_if! {
 
 impl Dlmalloc<System> {
     /// Creates a new instance of an allocator
-    pub const fn new() -> Dlmalloc<System> {
+    pub const fn with_system() -> Dlmalloc<System> {
         Dlmalloc(dlmalloc::Dlmalloc::new(System::new()))
     }
 }
 
 impl<A> Dlmalloc<A> {
     /// Creates a new instance of an allocator
-    pub const fn new_with_allocator(sys_allocator: A) -> Dlmalloc<A> {
+    pub const fn new(sys_allocator: A) -> Dlmalloc<A> {
         Dlmalloc(dlmalloc::Dlmalloc::new(sys_allocator))
+    }
+
+    /// Creates a new instance of an allocator with a custom configuration
+    pub const fn with_config(sys_allocator: A, config: DlmallocConfig) -> Dlmalloc<A> {
+        Dlmalloc(dlmalloc::Dlmalloc::with_config(sys_allocator, config))
     }
 }
 

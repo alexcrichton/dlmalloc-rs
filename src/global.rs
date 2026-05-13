@@ -10,7 +10,7 @@ pub use crate::sys::enable_alloc_after_fork;
 /// implements the `GlobalAlloc` trait in the standard library.
 pub struct GlobalDlmalloc;
 
-static mut DLMALLOC: Dlmalloc = Dlmalloc::new();
+static mut DLMALLOC: Dlmalloc = Dlmalloc::with_system();
 
 unsafe impl GlobalAlloc for GlobalDlmalloc {
     #[inline]
