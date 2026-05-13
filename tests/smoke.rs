@@ -21,16 +21,16 @@ fn smoke() {
 }
 
 #[test]
-fn no_layout_round_trip() {
+fn c_round_trip() {
     let mut a = Dlmalloc::new();
     unsafe {
-        let ptr = a.malloc_no_layout(32);
+        let ptr = a.c_malloc(32);
         assert!(!ptr.is_null());
         ptr.write_bytes(0xab, 32);
         assert_eq!(*ptr, 0xab);
         assert_eq!(*ptr.add(31), 0xab);
 
-        let grown = a.realloc_no_layout(ptr, 128);
+        let grown = a.c_realloc(ptr, 128);
         assert!(!grown.is_null());
         for i in 0..32 {
             assert_eq!(*grown.add(i), 0xab);
@@ -38,38 +38,38 @@ fn no_layout_round_trip() {
         grown.add(32).write_bytes(0xcd, 96);
         assert_eq!(*grown.add(127), 0xcd);
 
-        let shrunk = a.realloc_no_layout(grown, 16);
+        let shrunk = a.c_realloc(grown, 16);
         assert!(!shrunk.is_null());
         for i in 0..16 {
             assert_eq!(*shrunk.add(i), 0xab);
         }
 
-        a.free_no_layout(shrunk);
+        a.c_free(shrunk);
     }
 }
 
 #[test]
-fn no_layout_null_handling() {
+fn c_null_handling() {
     let mut a = Dlmalloc::new();
     unsafe {
-        a.free_no_layout(core::ptr::null_mut());
+        a.c_free(core::ptr::null_mut());
 
-        let ptr = a.realloc_no_layout(core::ptr::null_mut(), 64);
+        let ptr = a.c_realloc(core::ptr::null_mut(), 64);
         assert!(!ptr.is_null());
         ptr.write_bytes(0x5a, 64);
         assert_eq!(*ptr, 0x5a);
         assert_eq!(*ptr.add(63), 0x5a);
-        a.free_no_layout(ptr);
+        a.c_free(ptr);
     }
 }
 
 #[test]
-fn memalign_no_layout_round_trip() {
+fn c_memalign_round_trip() {
     let mut a = Dlmalloc::new();
     unsafe {
         for &align in &[1usize, 2, 8, 16, 32, 64, 256, 4096] {
-            let ptr = a.memalign_no_layout(align, 96);
-            assert!(!ptr.is_null(), "memalign_no_layout({align}, 96) failed");
+            let ptr = a.c_memalign(align, 96);
+            assert!(!ptr.is_null(), "c_memalign({align}, 96) failed");
             assert_eq!(
                 (ptr as usize) & (align - 1),
                 0,
@@ -79,14 +79,87 @@ fn memalign_no_layout_round_trip() {
             assert_eq!(*ptr, 0x77);
             assert_eq!(*ptr.add(95), 0x77);
 
-            let grown = a.realloc_no_layout(ptr, 256);
+            let grown = a.c_realloc(ptr, 256);
             assert!(!grown.is_null());
             for i in 0..96 {
                 assert_eq!(*grown.add(i), 0x77);
             }
 
-            a.free_no_layout(grown);
+            a.c_free(grown);
         }
+    }
+}
+
+#[test]
+fn mixed_api_round_trip() {
+    let mut a = Dlmalloc::new();
+    let natural = core::mem::size_of::<usize>() * 2;
+    unsafe {
+        // c_malloc -> layout-carrying free
+        let ptr = a.c_malloc(64);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0x11, 64);
+        a.free(ptr, 64, natural);
+
+        // layout-carrying malloc -> c_free
+        let ptr = a.malloc(64, natural);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0x22, 64);
+        a.c_free(ptr);
+
+        // c_malloc -> layout-carrying realloc -> c_free
+        let ptr = a.c_malloc(48);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0x33, 48);
+        let grown = a.realloc(ptr, 48, natural, 192);
+        assert!(!grown.is_null());
+        for i in 0..48 {
+            assert_eq!(*grown.add(i), 0x33);
+        }
+        a.c_free(grown);
+
+        // layout-carrying malloc -> c_realloc -> layout-carrying free
+        let ptr = a.malloc(48, natural);
+        assert!(!ptr.is_null());
+        ptr.write_bytes(0x44, 48);
+        let grown = a.c_realloc(ptr, 192);
+        assert!(!grown.is_null());
+        for i in 0..48 {
+            assert_eq!(*grown.add(i), 0x44);
+        }
+        a.free(grown, 192, natural);
+
+        // over-aligned c_memalign -> c_free
+        let ptr = a.c_memalign(4096, 96);
+        assert!(!ptr.is_null());
+        assert_eq!((ptr as usize) & (4096 - 1), 0);
+        ptr.write_bytes(0x55, 96);
+        a.c_free(ptr);
+
+        // over-aligned c_memalign -> layout-carrying free
+        let ptr = a.c_memalign(4096, 96);
+        assert!(!ptr.is_null());
+        assert_eq!((ptr as usize) & (4096 - 1), 0);
+        ptr.write_bytes(0x66, 96);
+        a.free(ptr, 96, 4096);
+
+        // over-aligned c_memalign -> layout-carrying realloc preserves
+        // alignment, then layout-carrying free
+        let ptr = a.c_memalign(4096, 96);
+        assert!(!ptr.is_null());
+        assert_eq!((ptr as usize) & (4096 - 1), 0);
+        ptr.write_bytes(0x77, 96);
+        let grown = a.realloc(ptr, 96, 4096, 256);
+        assert!(!grown.is_null());
+        assert_eq!(
+            (grown as usize) & (4096 - 1),
+            0,
+            "layout-carrying realloc must preserve over-alignment"
+        );
+        for i in 0..96 {
+            assert_eq!(*grown.add(i), 0x77);
+        }
+        a.free(grown, 256, 4096);
     }
 }
 
