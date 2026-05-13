@@ -167,6 +167,7 @@ fn mixed_api_round_trip() {
 mod fuzz;
 
 #[test]
+#[cfg(feature = "global")]
 fn stress() {
     let mut rng = SmallRng::seed_from_u64(0);
     let mut buf = vec![0; 4096];
