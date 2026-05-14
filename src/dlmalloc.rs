@@ -55,8 +55,6 @@ const TREEBIN_SHIFT: usize = 8;
 const NSMALLBINS_U32: u32 = NSMALLBINS as u32;
 const NTREEBINS_U32: u32 = NTREEBINS as u32;
 
-// `DEFAULT_TRIM_THRESHOLD` is still hard-coded; `granularity` and
-// `max_release_check_rate` are configurable per-instance.
 const DEFAULT_TRIM_THRESHOLD: usize = 2 * 1024 * 1024;
 
 // Minimum legal granularity. Smaller values would let `sys_trim` compute
@@ -114,18 +112,6 @@ fn leftshift_for_tree_index(x: u32) -> u32 {
 
 impl<A> Dlmalloc<A> {
     pub const fn new(system_allocator: A) -> Dlmalloc<A> {
-        Dlmalloc::new_with_config(system_allocator, 64 * 1024, 4095)
-    }
-
-    pub const fn new_with_config(
-        system_allocator: A,
-        granularity: usize,
-        max_release_check_rate: usize,
-    ) -> Dlmalloc<A> {
-        assert!(
-            granularity.is_power_of_two() && granularity >= MIN_GRANULARITY,
-            "granularity must be a power of two and at least 2 * size_of::<usize>()",
-        );
         Dlmalloc {
             smallmap: 0,
             treemap: 0,
@@ -146,8 +132,8 @@ impl<A> Dlmalloc<A> {
             trim_check: 0,
             least_addr: ptr::null_mut(),
             release_checks: 0,
-            granularity,
-            max_release_check_rate,
+            granularity: 64 * 1024,
+            max_release_check_rate: 4095,
             system_allocator,
         }
     }
@@ -168,7 +154,7 @@ impl<A> Dlmalloc<A> {
     /// from the new value (or to `usize::MAX` when disabling). This ensures a
     /// disabled -> enabled transition takes effect on the next free rather
     /// than after `usize::MAX` decrements.
-    pub fn set_max_release_check_rate(&mut self, rate: usize) {
+    pub const fn set_max_release_check_rate(&mut self, rate: usize) {
         self.max_release_check_rate = rate;
         self.release_checks = self.release_check_target();
     }
@@ -183,14 +169,14 @@ impl<A> Dlmalloc<A> {
     ///
     /// Unlike C dlmalloc's `mallopt(M_GRANULARITY, ...)`, which rejects
     /// sub-page values, this accepts any pow-of-two >= the malloc alignment.
-    /// That intentionally permits sub-page granularity for embedded targets
-    /// (e.g., Trusty TEE) that need tightly-packed allocations on small
-    /// heaps; the underlying system allocator may still round individual
-    /// requests up to its page size.
+    /// Sub-page granularity is intentionally allowed for embedded targets
+    /// that need tightly-packed allocations on small heaps; the underlying
+    /// system allocator may still round individual requests up to its page
+    /// size.
     ///
     /// For best results call this before the first allocation; existing
     /// segments retain their original alignment.
-    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+    pub const fn set_granularity(&mut self, granularity: usize) -> bool {
         if !granularity.is_power_of_two() || granularity < MIN_GRANULARITY {
             return false;
         }
@@ -201,7 +187,7 @@ impl<A> Dlmalloc<A> {
     /// Returns the value to seed `release_checks` with. When the configured
     /// rate is zero the periodic release pass is disabled by using
     /// `usize::MAX` so the countdown never reaches zero.
-    fn release_check_target(&self) -> usize {
+    const fn release_check_target(&self) -> usize {
         if self.max_release_check_rate == 0 {
             usize::MAX
         } else {
@@ -1970,34 +1956,20 @@ mod tests {
         assert_eq!(a.max_release_check_rate, 4095);
     }
 
+    // Verifies the const-fn setter chain works end-to-end in a `const` block
+    // (the supported pattern in lieu of dedicated constructors). Validation
+    // failures become compile-time errors via `assert!`.
     #[test]
-    fn new_with_config_sets_fields() {
-        let page = System::new().page_size();
-        let a = Dlmalloc::new_with_config(System::new(), page, 17);
-        assert_eq!(a.granularity, page);
-        assert_eq!(a.max_release_check_rate, 17);
-    }
-
-    #[test]
-    #[should_panic(expected = "granularity must be a power of two")]
-    fn new_with_config_rejects_non_power_of_two() {
-        let _ = Dlmalloc::new_with_config(System::new(), 3 * 1024, 4095);
-    }
-
-    #[test]
-    #[should_panic(expected = "granularity must be a power of two")]
-    fn new_with_config_rejects_zero_granularity() {
-        let _ = Dlmalloc::new_with_config(System::new(), 0, 4095);
-    }
-
-    // Below `MIN_GRANULARITY` (i.e. `malloc_alignment`) the trim math at
-    // `sys_trim` would leave a non-aligned residual `topsize` and corrupt
-    // chunk flag bits, so the const constructor rejects such values too.
-    #[test]
-    #[should_panic(expected = "granularity must be a power of two")]
-    fn new_with_config_rejects_below_min_alignment() {
-        let too_small = MIN_GRANULARITY / 2;
-        let _ = Dlmalloc::new_with_config(System::new(), too_small, 4095);
+    fn const_block_configuration() {
+        let a = const {
+            let mut a = Dlmalloc::new(System::new());
+            assert!(a.set_granularity(MIN_GRANULARITY * 2));
+            a.set_max_release_check_rate(0);
+            a
+        };
+        assert_eq!(a.granularity, MIN_GRANULARITY * 2);
+        assert_eq!(a.max_release_check_rate, 0);
+        assert_eq!(a.release_checks, usize::MAX);
     }
 
     #[test]
@@ -2077,7 +2049,8 @@ mod tests {
     #[test]
     #[cfg(not(miri))]
     fn small_release_rate_drives_periodic_pass() {
-        let mut a = Dlmalloc::new_with_config(System::new(), 64 * 1024, 2);
+        let mut a = Dlmalloc::new(System::new());
+        a.set_max_release_check_rate(2);
         let large = NSMALLBINS * (1 << SMALLBIN_SHIFT);
         assert!(!a.is_small(large));
         unsafe {
@@ -2097,7 +2070,8 @@ mod tests {
     #[cfg(not(miri))]
     fn custom_page_granularity_alloc_free() {
         let page = System::new().page_size();
-        let mut a = Dlmalloc::new_with_config(System::new(), page, 4095);
+        let mut a = Dlmalloc::new(System::new());
+        assert!(a.set_granularity(page));
         assert_eq!(a.granularity, page);
         unsafe {
             let mut ptrs = [ptr::null_mut::<u8>(); 16];
@@ -2123,7 +2097,8 @@ mod tests {
     fn custom_sub_page_granularity_alloc_free() {
         let sub_page = MIN_GRANULARITY * 2;
         assert!(sub_page < System::new().page_size());
-        let mut a = Dlmalloc::new_with_config(System::new(), sub_page, 4095);
+        let mut a = Dlmalloc::new(System::new());
+        assert!(a.set_granularity(sub_page));
         assert_eq!(a.granularity, sub_page);
         unsafe {
             let mut ptrs = [ptr::null_mut::<u8>(); 16];

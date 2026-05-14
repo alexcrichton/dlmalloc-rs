@@ -97,49 +97,12 @@ impl Dlmalloc<System> {
     pub const fn new() -> Dlmalloc<System> {
         Dlmalloc(dlmalloc::Dlmalloc::new(System::new()))
     }
-
-    /// Creates a new instance with a custom system-allocation `granularity`
-    /// (in bytes) and `max_release_check_rate`.
-    ///
-    /// `granularity` must be a power of two and at least
-    /// `2 * size_of::<usize>()` (the malloc alignment); violating this panics
-    /// at const-evaluation time when called in a `const` context, or at
-    /// runtime otherwise. Sub-page granularity is permitted on purpose to
-    /// support embedded targets that need tightly-packed allocations.
-    ///
-    /// A `max_release_check_rate` of `0` disables the periodic
-    /// release-unused-segments pass.
-    pub const fn new_with_config(
-        granularity: usize,
-        max_release_check_rate: usize,
-    ) -> Dlmalloc<System> {
-        Dlmalloc(dlmalloc::Dlmalloc::new_with_config(
-            System::new(),
-            granularity,
-            max_release_check_rate,
-        ))
-    }
 }
 
 impl<A> Dlmalloc<A> {
     /// Creates a new instance of an allocator
     pub const fn new_with_allocator(sys_allocator: A) -> Dlmalloc<A> {
         Dlmalloc(dlmalloc::Dlmalloc::new(sys_allocator))
-    }
-
-    /// Creates a new instance with the given system allocator, custom
-    /// `granularity` (in bytes), and `max_release_check_rate`. See
-    /// [`Dlmalloc::new_with_config`] for the contract on these values.
-    pub const fn new_with_allocator_and_config(
-        sys_allocator: A,
-        granularity: usize,
-        max_release_check_rate: usize,
-    ) -> Dlmalloc<A> {
-        Dlmalloc(dlmalloc::Dlmalloc::new_with_config(
-            sys_allocator,
-            granularity,
-            max_release_check_rate,
-        ))
     }
 
     /// Sets the maximum number of large-chunk frees between periodic
@@ -149,7 +112,7 @@ impl<A> Dlmalloc<A> {
     /// active countdown is reseeded from the new value, so a disabled ->
     /// enabled transition fires on the next free rather than after
     /// `usize::MAX` decrements.
-    pub fn set_max_release_check_rate(&mut self, rate: usize) {
+    pub const fn set_max_release_check_rate(&mut self, rate: usize) {
         self.0.set_max_release_check_rate(rate);
     }
 
@@ -168,7 +131,25 @@ impl<A> Dlmalloc<A> {
     ///
     /// For best results call this before the first allocation; existing
     /// segments retain their original alignment.
-    pub fn set_granularity(&mut self, granularity: usize) -> bool {
+    ///
+    /// # Const context
+    ///
+    /// This is a `const fn`, so a configured allocator can be built in a
+    /// `const` block:
+    ///
+    /// ```ignore
+    /// let mut alloc = const {
+    ///     let mut a = Dlmalloc::new();
+    ///     assert!(a.set_granularity(32 * core::mem::size_of::<usize>()));
+    ///     a.set_max_release_check_rate(0);
+    ///     a
+    /// };
+    /// ```
+    ///
+    /// `Dlmalloc` is `Send` but not `Sync`, so it cannot be placed directly
+    /// in a `static`; use `GlobalDlmalloc` (behind the `global` feature)
+    /// when a `static` allocator is needed.
+    pub const fn set_granularity(&mut self, granularity: usize) -> bool {
         self.0.set_granularity(granularity)
     }
 }

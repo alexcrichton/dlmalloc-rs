@@ -178,14 +178,17 @@ fn stress() {
     }
 }
 
-// Exercises the public configuration API (`new_with_config`,
-// `set_max_release_check_rate`, `set_granularity`) end-to-end through the
-// `Dlmalloc<System>` wrapper.
+// Exercises the public configuration API (`set_max_release_check_rate`,
+// `set_granularity`) end-to-end through the `Dlmalloc<System>` wrapper,
+// configured via a `const` block to also verify the const-fn chain.
 #[test]
 fn configurable_api_smoke() {
-    // Construct with a non-default granularity and a tiny release rate so the
-    // periodic release pass exercises during the workload.
-    let mut a = Dlmalloc::new_with_config(64 * 1024, 4);
+    let mut a = const {
+        let mut a = Dlmalloc::new();
+        assert!(a.set_granularity(64 * 1024));
+        a.set_max_release_check_rate(4);
+        a
+    };
 
     // Disable, then re-enable: with the bug present this would leave the
     // countdown stuck at usize::MAX and the rate change silently ignored.
@@ -216,9 +219,8 @@ fn configurable_api_smoke() {
 
 // Sub-page granularity end-to-end through the public API. The system
 // allocator on Linux/macOS will round each request up to its page size,
-// so this primarily exercises the dlmalloc-side accounting; on the
-// embedded targets this PR is motivated by, it also packs allocations
-// tightly into the application heap.
+// so this primarily exercises the dlmalloc-side accounting; on embedded
+// targets it also packs allocations tightly into the application heap.
 // Skipped under miri: with 32-byte granularity, chunks are packed tightly
 // enough that small-bin unlink paths get exercised in a way that trips
 // dlmalloc-rs's pre-existing Stacked Borrows quirk with `smallbins`
@@ -228,7 +230,8 @@ fn configurable_api_smoke() {
 #[cfg(not(miri))]
 fn sub_page_granularity_alloc_free() {
     let sub_page = 4 * core::mem::size_of::<usize>();
-    let mut a = Dlmalloc::new_with_config(sub_page, 4095);
+    let mut a = Dlmalloc::new();
+    assert!(a.set_granularity(sub_page));
     unsafe {
         let mut ptrs = [core::ptr::null_mut::<u8>(); 8];
         for (i, slot) in ptrs.iter_mut().enumerate() {
