@@ -104,6 +104,54 @@ impl<A> Dlmalloc<A> {
     pub const fn new_with_allocator(sys_allocator: A) -> Dlmalloc<A> {
         Dlmalloc(dlmalloc::Dlmalloc::new(sys_allocator))
     }
+
+    /// Sets the maximum number of large-chunk frees between periodic
+    /// release-unused-segments passes. A value of `0` disables the pass.
+    ///
+    /// May be called at any time. The new rate takes effect immediately: the
+    /// active countdown is reseeded from the new value, so a disabled ->
+    /// enabled transition fires on the next free rather than after
+    /// `usize::MAX` decrements.
+    pub const fn set_max_release_check_rate(&mut self, rate: usize) {
+        self.0.set_max_release_check_rate(rate);
+    }
+
+    /// Sets the granularity used for system allocations.
+    ///
+    /// Returns `true` if the value was accepted, `false` otherwise. To be
+    /// accepted, `granularity` must be a power of two and at least
+    /// `2 * size_of::<usize>()` (the malloc alignment); smaller values are
+    /// rejected because they would break the chunk size/flag-bit invariants
+    /// during `trim`.
+    ///
+    /// Unlike C dlmalloc's `mallopt(M_GRANULARITY, ...)`, which rejects
+    /// sub-page values, this accepts any pow-of-two >= the malloc alignment.
+    /// Sub-page granularity is intentionally allowed for embedded targets
+    /// that need tightly-packed allocations.
+    ///
+    /// For best results call this before the first allocation; existing
+    /// segments retain their original alignment.
+    ///
+    /// # Const context
+    ///
+    /// This is a `const fn`, so a configured allocator can be built in a
+    /// `const` block:
+    ///
+    /// ```ignore
+    /// let mut alloc = const {
+    ///     let mut a = Dlmalloc::new();
+    ///     assert!(a.set_granularity(32 * core::mem::size_of::<usize>()));
+    ///     a.set_max_release_check_rate(0);
+    ///     a
+    /// };
+    /// ```
+    ///
+    /// `Dlmalloc` is `Send` but not `Sync`, so it cannot be placed directly
+    /// in a `static`; use `GlobalDlmalloc` (behind the `global` feature)
+    /// when a `static` allocator is needed.
+    pub const fn set_granularity(&mut self, granularity: usize) -> bool {
+        self.0.set_granularity(granularity)
+    }
 }
 
 impl<A: Allocator> Dlmalloc<A> {

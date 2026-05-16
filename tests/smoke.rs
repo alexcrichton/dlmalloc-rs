@@ -177,3 +177,72 @@ fn stress() {
         let _ = fuzz::run(&mut u);
     }
 }
+
+// Exercises the public configuration API (`set_max_release_check_rate`,
+// `set_granularity`) end-to-end through the `Dlmalloc<System>` wrapper,
+// configured via a `const` block to also verify the const-fn chain.
+#[test]
+fn configurable_api_smoke() {
+    let mut a = const {
+        let mut a = Dlmalloc::new();
+        assert!(a.set_granularity(64 * 1024));
+        a.set_max_release_check_rate(4);
+        a
+    };
+
+    // Disable, then re-enable: with the bug present this would leave the
+    // countdown stuck at usize::MAX and the rate change silently ignored.
+    a.set_max_release_check_rate(0);
+    a.set_max_release_check_rate(4);
+
+    unsafe {
+        // A few rounds of large-chunk alloc/free to tick the release
+        // countdown to zero and trip the periodic pass.
+        for _ in 0..16 {
+            let p1 = a.malloc(4096, 8);
+            let p2 = a.malloc(4096, 8);
+            assert!(!p1.is_null());
+            assert!(!p2.is_null());
+            a.free(p1, 4096, 8);
+            a.free(p2, 4096, 8);
+        }
+    }
+
+    // set_granularity rejects invalid values and accepts valid ones,
+    // including sub-page values down to `2 * size_of::<usize>()`.
+    assert!(!a.set_granularity(0));
+    assert!(!a.set_granularity(64 * 1024 + 1));
+    assert!(!a.set_granularity(core::mem::size_of::<usize>())); // below malloc_alignment
+    assert!(a.set_granularity(2 * core::mem::size_of::<usize>())); // exactly malloc_alignment
+    assert!(a.set_granularity(64 * 1024));
+}
+
+// Sub-page granularity end-to-end through the public API. The system
+// allocator on Linux/macOS will round each request up to its page size,
+// so this primarily exercises the dlmalloc-side accounting; on embedded
+// targets it also packs allocations tightly into the application heap.
+// Skipped under miri: with 32-byte granularity, chunks are packed tightly
+// enough that small-bin unlink paths get exercised in a way that trips
+// dlmalloc-rs's pre-existing Stacked Borrows quirk with `smallbins`
+// self-aliasing (the internal `custom_sub_page_granularity_alloc_free`
+// test in `src/dlmalloc.rs` is skipped for the same reason).
+#[test]
+#[cfg(not(miri))]
+fn sub_page_granularity_alloc_free() {
+    let sub_page = 4 * core::mem::size_of::<usize>();
+    let mut a = Dlmalloc::new();
+    assert!(a.set_granularity(sub_page));
+    unsafe {
+        let mut ptrs = [core::ptr::null_mut::<u8>(); 8];
+        for (i, slot) in ptrs.iter_mut().enumerate() {
+            let p = a.malloc(32 + i * 5, 8);
+            assert!(!p.is_null());
+            *p = i as u8;
+            *slot = p;
+        }
+        for (i, &p) in ptrs.iter().enumerate() {
+            assert_eq!(*p, i as u8);
+            a.free(p, 32 + i * 5, 8);
+        }
+    }
+}
